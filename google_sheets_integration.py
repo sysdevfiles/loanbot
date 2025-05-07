@@ -1,17 +1,15 @@
 import gspread
-# oauth2client.service_account is no longer needed for this auth method
-# from oauth2client.service_account import ServiceAccountCredentials
 import os
-import sys # Import sys para verificar la plataforma
+import sys
 from dotenv import load_dotenv
+# La biblioteca oauth2client.client tiene las constantes para el flujo OOB
+from oauth2client.client import OOB_CALLBACK_URN
 
 load_dotenv()
 
-# Define the scope - this remains important
 SCOPE = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
 HEADER = ['ID Préstamo', 'Fecha de Registro', 'Cliente', 'Capital', 'Interés', 'Fecha de Pago', 'Monto Amortizado', 'Saldo', 'Estatus']
 
-# Initialize gspread client using OAuth2.0
 def init_gspread_client(oauth_creds_file_path, sheet_name, worksheet_name):
     """Initializes and returns the gspread client and worksheet using OAuth2.0."""
     try:
@@ -25,44 +23,52 @@ def init_gspread_client(oauth_creds_file_path, sheet_name, worksheet_name):
             print("Error: Nombre de la hoja de trabajo no proporcionado.")
             return None
         
-        # Check if the credentials file exists
         if not os.path.exists(oauth_creds_file_path):
             print(f"Error: Archivo de credenciales OAuth no encontrado en la ruta: {oauth_creds_file_path}")
             print("Asegúrate de que la variable GOOGLE_OAUTH_CLIENT_SECRET_FILE en tu .env sea correcta y el archivo exista.")
             return None
 
         print(f"Intentando autenticar con gspread.oauth() usando: {oauth_creds_file_path}")
-        print("Si es la primera vez, se te pedirá que autorices el acceso en tu navegador.")
-        print("Copia la URL que aparezca en la consola, ábrela en un navegador, autoriza, y copia el código de vuelta si se solicita.")
+        print("Se te guiará a través del proceso de autorización de Google.")
+        print("1. Se te proporcionará una URL. Cópiala y ábrela en un navegador web.")
+        print("2. Autoriza la aplicación en la página de Google.")
+        print("3. Google te mostrará un CÓDIGO DE AUTORIZACIÓN. Copia ese código.")
+        print("4. Pega el código de autorización de vuelta en esta consola cuando se te solicite.")
         
-        # Workaround for "could not locate runnable browser" in headless environments
+        # Forzar el flujo OOB (Out-Of-Band) puede ser más robusto en entornos headless.
+        # gspread.oauth() debería intentar esto por defecto si no puede iniciar un servidor local,
+        # pero podemos ser más explícitos o guiar al usuario.
+        # El parámetro auth_local_webserver=False y redirect_uri=OOB_CALLBACK_URN
+        # no son directamente compatibles con gspread.oauth() de la misma manera que con oauth2client.
+        # gspread.oauth() simplifica esto. Si no puede iniciar un servidor, debería
+        # imprimir la URL y esperar la entrada del código.
+        # El workaround de BROWSER=echo ayuda a que no falle intentando abrir un navegador.
+
         original_browser_env = os.environ.get("BROWSER")
         browser_env_set_by_script = False
-        # Este workaround es más relevante para entornos Linux headless.
-        if "linux" in sys.platform.lower():
-            os.environ["BROWSER"] = "echo" # 'echo' es un comando que no fallará
+        if "linux" in sys.platform.lower() and not original_browser_env: # Solo si BROWSER no está ya definido
+            os.environ["BROWSER"] = "echo"
             browser_env_set_by_script = True
             print(f"INFO: Temporalmente se ha establecido BROWSER=echo para facilitar el flujo OAuth en un entorno headless.")
 
-        client = None # Inicializar client a None
+        client = None
         try:
-            # gspread.oauth() uses the credentials file to guide the user through the OAuth flow
-            # and then stores the resulting authorized user credentials.
+            # gspread.oauth() maneja el flujo. Si no puede iniciar un servidor web local,
+            # imprimirá la URL y luego esperará que el usuario pegue el código.
             client = gspread.oauth(
                 credentials_filename=oauth_creds_file_path,
                 authorized_user_filename=os.path.join(os.path.expanduser("~"), ".config", "gspread", "loanbot_authorized_user.json"),
                 scopes=SCOPE
             )
         finally:
-            # Restaurar la variable de entorno BROWSER si la modificamos
             if browser_env_set_by_script:
-                if original_browser_env is None:
+                if original_browser_env is None: # Si originalmente no estaba seteado, lo borramos
                     del os.environ["BROWSER"]
-                else:
+                else: # Si estaba seteado, lo restauramos
                     os.environ["BROWSER"] = original_browser_env
-                print(f"INFO: Variable de entorno BROWSER restaurada a su valor original.")
+                print(f"INFO: Variable de entorno BROWSER restaurada.")
         
-        if not client: # Si client sigue siendo None después del intento de oauth
+        if not client:
             print("Error: Falló la inicialización del cliente de gspread después del intento de OAuth.")
             return None
 
@@ -71,11 +77,11 @@ def init_gspread_client(oauth_creds_file_path, sheet_name, worksheet_name):
         ensure_header(worksheet)
         print("Cliente de Google Sheets (OAuth) inicializado correctamente.")
         return worksheet
-    except FileNotFoundError: # This might be redundant if os.path.exists is checked above
+    except FileNotFoundError:
         print(f"Error: Archivo de credenciales OAuth no encontrado en la ruta: {oauth_creds_file_path}")
         return None
     except gspread.exceptions.SpreadsheetNotFound:
-        print(f"Error: Hoja de cálculo '{sheet_name}' no encontrada. Asegúrate de que el nombre sea correcto y que la cuenta de servicio tenga permisos.")
+        print(f"Error: Hoja de cálculo '{sheet_name}' no encontrada. Asegúrate de que el nombre sea correcto y que la cuenta tenga permisos.")
         return None
     except gspread.exceptions.WorksheetNotFound:
         print(f"Error: Hoja de trabajo '{worksheet_name}' no encontrada en la hoja de cálculo '{sheet_name}'.")
@@ -83,9 +89,13 @@ def init_gspread_client(oauth_creds_file_path, sheet_name, worksheet_name):
     except Exception as e:
         print(f"Error initializing Google Sheets client (OAuth): {e}")
         print("Detalles del error:", str(e))
-        if "invalid_grant" in str(e).lower():
-            print("Esto puede indicar un problema con los tokens de autorización almacenados o las credenciales OAuth.")
-            print(f"Intenta eliminar el archivo de tokens (si existe, podría estar en ~/.config/gspread/loanbot_authorized_user.json o similar) y re-autenticar.")
+        if "invalid_grant" in str(e).lower() or "deleted_client" in str(e).lower() or "oauth_problem" in str(e).lower():
+            print("Esto puede indicar un problema con los tokens de autorización almacenados, las credenciales OAuth, o la configuración del cliente OAuth en Google Cloud.")
+            auth_token_path = os.path.join(os.path.expanduser("~"), ".config", "gspread", "loanbot_authorized_user.json")
+            print(f"Intenta eliminar el archivo de tokens ({auth_token_path}) si existe, y re-autenticar.")
+            print(f"Verifica también que tu cliente OAuth en Google Cloud Console esté configurado correctamente y no haya sido eliminado.")
+        elif "could not locate runnable browser" in str(e).lower():
+             print("Asegúrate de estar copiando la URL de la consola a un navegador y luego el código del navegador de vuelta a la consola.")
         return None
 
 def ensure_header(worksheet):
