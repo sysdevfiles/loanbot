@@ -56,9 +56,9 @@ PROJECT_PATH="${CLONE_PARENT_DIR}/${PROJECT_DIR_NAME}"
 
 if [ -d "$PROJECT_PATH" ]; then
     echo -e "${YELLOW}El directorio del proyecto '$PROJECT_PATH' ya existe.${NC}"
-    prompt_re_clone="${YELLOW}¿Deseas eliminarlo y volver a clonar para una instalación completamente limpia? (s/N): ${NC}"
-    read -p "$prompt_re_clone" re_clone # Sintaxis corregida
-    if [[ "$re_clone" =~ ^[Ss]$ ]]; then
+    echo -e "${YELLOW}¿Deseas eliminarlo y volver a clonar para una instalación completamente limpia? (yes/no): ${NC}"
+    read re_clone
+    if [[ "$re_clone" =~ ^([Yy]([Ee][Ss])?)$ ]]; then # Check for y, Y, yes, Yes, YES
         echo -e "${CYAN}Eliminando directorio existente '$PROJECT_PATH'...${NC}"
         rm -rf "$PROJECT_PATH"
         echo -e "${CYAN}Clonando repositorio '$REPO_URL' en '$PROJECT_PATH'...${NC}"
@@ -90,7 +90,7 @@ fi
 echo -e "${GREEN}Directorio actual: $(pwd)${NC}"
 
 # Limpiar venv preexistente si no se re-clonó y existe
-if [[ ! "$re_clone" =~ ^[Ss]$ ]] && [ -d "venv" ]; then
+if ! [[ "$re_clone" =~ ^([Yy]([Ee][Ss])?)$ ]] && [ -d "venv" ]; then # Updated condition
     echo -e "${YELLOW}Directorio 'venv' existente encontrado. Eliminándolo para una instalación limpia del entorno virtual...${NC}"
     rm -rf "venv"
     if [ $? -ne 0 ]; then
@@ -175,20 +175,29 @@ default_google_oauth_secret_file="config/client_secret_oauth.json" # Nombre gen�
 # o se pueden poner los códigos de color directamente en la cadena.
 # Para mayor portabilidad y simplicidad, se pueden definir las cadenas de prompt antes.
 
-prompt_telegram_token="${YELLOW}Ingresa tu TELEGRAM_BOT_TOKEN: ${NC}"
-prompt_telegram_admin_id="${YELLOW}Ingresa tu TELEGRAM_ADMIN_ID (opcional, para comandos de administrador): ${NC}"
-prompt_google_sheet_name="${YELLOW}Nombre de tu Hoja de Cálculo de Google (Spreadsheet Name) [${default_google_sheet_name}]: ${NC}"
-prompt_google_worksheet_name="${YELLOW}Nombre de la Hoja de Trabajo específica (Worksheet Name) [${default_google_worksheet_name}]: ${NC}"
-prompt_google_oauth_file_path="${YELLOW}Ruta donde se creará el archivo JSON para tus credenciales de cliente OAuth 2.0 (relativa al proyecto, ej. ${default_google_oauth_secret_file}) [${default_google_oauth_secret_file}]: ${NC}"
+prompt_telegram_token_text="${YELLOW}Ingresa tu TELEGRAM_BOT_TOKEN: ${NC}"
+prompt_telegram_admin_id_text="${YELLOW}Ingresa tu TELEGRAM_ADMIN_ID (opcional, para comandos de administrador): ${NC}"
+prompt_google_sheet_name_text="${YELLOW}Nombre de tu Hoja de Cálculo de Google (Spreadsheet Name) [${default_google_sheet_name}]: ${NC}"
+prompt_google_worksheet_name_text="${YELLOW}Nombre de la Hoja de Trabajo específica (Worksheet Name) [${default_google_worksheet_name}]: ${NC}"
+prompt_google_oauth_file_path_text="${YELLOW}Ruta donde se creará el archivo JSON para tus credenciales de cliente OAuth 2.0 (relativa al proyecto, ej. ${default_google_oauth_secret_file}) [${default_google_oauth_secret_file}]: ${NC}"
 
-read -p "$prompt_telegram_token" telegram_bot_token
-read -p "$prompt_telegram_admin_id" telegram_admin_id
+echo -e "$prompt_telegram_token_text"
+read telegram_bot_token
+
+echo -e "$prompt_telegram_admin_id_text"
+read telegram_admin_id
+
 # No longer asking for database_name
-read -p "$prompt_google_sheet_name" google_sheet_name
+echo -e "$prompt_google_sheet_name_text"
+read google_sheet_name
 google_sheet_name="${google_sheet_name:-$default_google_sheet_name}"
-read -p "$prompt_google_worksheet_name" google_worksheet_name
+
+echo -e "$prompt_google_worksheet_name_text"
+read google_worksheet_name
 google_worksheet_name="${google_worksheet_name:-$default_google_worksheet_name}"
-read -p "$prompt_google_oauth_file_path" google_oauth_client_secret_file_to_create
+
+echo -e "$prompt_google_oauth_file_path_text"
+read google_oauth_client_secret_file_to_create
 google_oauth_client_secret_file_to_create="${google_oauth_client_secret_file_to_create:-$default_google_oauth_secret_file}"
 
 # Crear el directorio para el archivo JSON si no existe
@@ -224,11 +233,19 @@ EOF_JSON_BASE
 
 if [ $? -eq 0 ]; then
     echo -e "${GREEN}Archivo JSON base creado exitosamente en '$google_oauth_secret_file_full_path'.${NC}"
-    echo -e "${YELLOW}AHORA, por favor, edita este archivo y pega el contenido de tu JSON de credenciales OAuth 2.0 descargado de Google Cloud Console.${NC}"
-    echo -e "${YELLOW}Puedes usar nano: ${GREEN}nano \"$google_oauth_secret_file_full_path\"${NC}"
-    echo -e "${YELLOW}Asegúrate de que el contenido final sea un JSON válido con tus credenciales reales.${NC}"
-    prompt_json_edited="${YELLOW}Presiona Enter cuando hayas terminado de editar y guardar el archivo JSON... ${NC}"
-    read -p "$prompt_json_edited" # Sintaxis corregida
+    echo -e "${YELLOW}Se abrirá nano para que pegues el contenido de tu JSON de credenciales OAuth 2.0 descargado de Google Cloud Console.${NC}"
+    echo -e "${YELLOW}Pega el contenido, guarda los cambios (Ctrl+O, Enter) y cierra nano (Ctrl+X) para continuar.${NC}"
+    
+    # Abrir nano para editar el archivo
+    if command -v nano &> /dev/null; then
+        nano "$google_oauth_secret_file_full_path"
+        echo -e "${GREEN}Edición de archivo JSON completada.${NC}"
+    else
+        echo -e "${RED}Comando 'nano' no encontrado. Por favor, edita el archivo manualmente:${NC}"
+        echo -e "${GREEN}\"$google_oauth_secret_file_full_path\"${NC}"
+        echo -e "${YELLOW}Luego presiona Enter para continuar...${NC}"
+        read # Pausa para edición manual si nano no está
+    fi
 else
     echo -e "${RED}Error al crear el archivo JSON base en '$google_oauth_secret_file_full_path'.${NC}"
 fi
@@ -258,10 +275,11 @@ fi
 
 # Paso H: Configurar el servicio systemd interactivamente (antes Paso G, ahora H)
 echo -e "\n${CYAN}[Paso H/H] Configuración del servicio systemd (Opcional Interactivo)...${NC}"
-prompt_setup_service="${YELLOW}¿Deseas configurar el bot como un servicio systemd ahora? (s/N): ${NC}"
-read -p "$prompt_setup_service" setup_service # Sintaxis corregida
+prompt_setup_service_text="${YELLOW}¿Deseas configurar el bot como un servicio systemd ahora? (yes/no): ${NC}" # Ensure this uses (yes/no)
+echo -e "$prompt_setup_service_text"
+read setup_service
 
-if [[ "$setup_service" =~ ^[Ss]$ ]]; then
+if [[ "$setup_service" =~ ^([Yy]([Ee][Ss])?)$ ]]; then # Check for y, Y, yes, Yes, YES
     echo -e "${CYAN}Configurando el servicio systemd...${NC}"
     
     # Usar el directorio actual del proyecto clonado
@@ -310,8 +328,9 @@ WantedBy=multi-user.target"
 
         echo -e "${CYAN}Creando archivo de servicio en $SERVICE_FILE_PATH...${NC}"
         echo "$service_file_content" > "$SERVICE_FILE_PATH"
+        write_status=$? # Capture the exit status of the echo command
         
-        if [ $? -eq 0]; then
+        if [ "$write_status" -eq 0 ]; then # Check the captured status
             echo -e "${GREEN}Archivo de servicio creado exitosamente.${NC}"
             
             echo -e "${CYAN}Recargando demonio de systemd...${NC}"
@@ -321,8 +340,18 @@ WantedBy=multi-user.target"
             systemctl enable loanbot.service
             
             echo -e "${GREEN}Servicio loanbot habilitado.${NC}"
-            echo -e "${YELLOW}Puedes iniciar el servicio con: systemctl start loanbot.service${NC}"
-            echo -e "${YELLOW}Y verificar su estado con: systemctl status loanbot.service${NC}"
+            echo -e "${CYAN}Intentando iniciar el servicio loanbot ahora...${NC}" # Nuevo mensaje
+            systemctl start loanbot.service # Nuevo comando para iniciar el servicio
+            
+            # Verificar el estado del servicio después de intentar iniciarlo
+            if systemctl is-active --quiet loanbot.service; then
+                echo -e "${GREEN}Servicio loanbot iniciado exitosamente.${NC}"
+            else
+                echo -e "${RED}Error al iniciar el servicio loanbot.${NC}"
+                echo -e "${YELLOW}Puedes intentar iniciarlo manualmente con: systemctl start loanbot.service${NC}"
+            fi
+            
+            echo -e "${YELLOW}Puedes verificar su estado con: systemctl status loanbot.service${NC}"
         else
             echo -e "${RED}Error al crear el archivo de servicio. Verifica los permisos.${NC}"
             echo -e "${YELLOW}La configuración del servicio systemd se omitirá. Puedes hacerlo manualmente más tarde.${NC}"
