@@ -341,19 +341,37 @@ WantedBy=multi-user.target"
             
             echo -e "${GREEN}Servicio loanbot habilitado.${NC}"
             
-            echo -e "\n${YELLOW}ACCIÓN IMPORTANTE REQUERIDA PARA GOOGLE SHEETS:${NC}"
-            echo -e "${YELLOW}El servicio 'loanbot.service' está habilitado pero NO iniciado.${NC}"
-            echo -e "${YELLOW}Debes ejecutar el bot manualmente UNA VEZ para autorizar el acceso a Google Sheets:${NC}"
-            echo -e "${CYAN}1. Cambia al directorio del proyecto: ${GREEN}cd ${current_project_path}${NC}"
-            echo -e "${CYAN}2. Activa el entorno virtual: ${GREEN}source venv/bin/activate${NC}"
-            echo -e "${CYAN}3. Ejecuta el bot: ${GREEN}python3 main.py${NC}"
-            echo -e "${YELLOW}   Sigue las instrucciones en la consola. Se te pedirá abrir una URL en tu navegador para autorizar.${NC}"
-            echo -e "${YELLOW}   Una vez que el bot esté funcionando y veas mensajes de que está conectado, puedes detenerlo con ${RED}Ctrl+C${YELLOW}.${NC}"
-            echo -e "${CYAN}4. Después de la autorización exitosa, inicia el servicio systemd:${NC}"
-            echo -e "${GREEN}   systemctl start loanbot.service${NC}"
-            echo -e "${CYAN}5. Verifica el estado del servicio:${NC}"
-            echo -e "${GREEN}   systemctl status loanbot.service${NC}"
-            echo -e "${YELLOW}Si omites el paso de ejecución manual para la autorización de Google, el servicio systemd podría fallar al iniciar.${NC}"
+            echo -e "${CYAN}Intentando iniciar el servicio loanbot ahora...${NC}"
+            systemctl start loanbot.service
+            
+            echo -e "${CYAN}Esperando unos segundos para que el servicio se estabilice...${NC}"
+            sleep 5 # Espera 5 segundos
+
+            if systemctl is-active --quiet loanbot.service; then
+                echo -e "${GREEN}Servicio loanbot iniciado exitosamente y corriendo en segundo plano.${NC}"
+            elif systemctl is-failed --quiet loanbot.service; then
+                echo -e "${RED}Error: El servicio loanbot falló al iniciar.${NC}"
+                echo -e "${YELLOW}CAUSA MÁS PROBABLE: La autorización inicial de Google Sheets no se ha completado.${NC}"
+                echo -e "${YELLOW}DEBES ejecutar el bot manualmente UNA VEZ para autorizar el acceso a Google Sheets:${NC}"
+                echo -e "${CYAN}1. Asegúrate de estar en el directorio del proyecto: ${GREEN}cd ${current_project_path}${NC}"
+                echo -e "${CYAN}2. Activa el entorno virtual: ${GREEN}source venv/bin/activate${NC}"
+                echo -e "${CYAN}3. Ejecuta el bot: ${GREEN}python3 main.py${NC}"
+                echo -e "${YELLOW}   Sigue las instrucciones en la consola (abrir URL en navegador, autorizar).${NC}"
+                echo -e "${YELLOW}   Una vez que el bot confirme conexión y funcione, detenlo con ${RED}Ctrl+C${YELLOW}.${NC}"
+                echo -e "${CYAN}4. Luego, intenta reiniciar el servicio: ${GREEN}systemctl restart loanbot.service${NC}"
+            else
+                echo -e "${YELLOW}El estado del servicio loanbot es incierto. Puede que esté iniciando o haya tenido un problema.${NC}"
+                echo -e "${YELLOW}Verifica manualmente. Si no funciona, la causa más probable es la autorización de Google pendiente (ver pasos anteriores).${NC}"
+            fi
+
+            echo -e "\n${CYAN}Comandos útiles para gestionar el servicio loanbot:${NC}"
+            echo -e "  ${GREEN}systemctl start loanbot.service${NC}    - Iniciar el servicio"
+            echo -e "  ${GREEN}systemctl stop loanbot.service${NC}     - Detener el servicio"
+            echo -e "  ${GREEN}systemctl restart loanbot.service${NC} - Reiniciar el servicio"
+            echo -e "  ${GREEN}systemctl status loanbot.service${NC}   - Verificar el estado del servicio"
+            echo -e "  ${GREEN}journalctl -u loanbot.service -f${NC}  - Ver los logs del servicio en tiempo real"
+            echo -e "  ${GREEN}systemctl daemon-reload${NC}            - Recargar systemd (si modificas el archivo .service manualmente)"
+            echo -e "\n${YELLOW}IMPORTANTE: Si el servicio falla repetidamente, asegúrate de haber completado la autorización de Google Sheets ejecutando 'python3 main.py' manualmente primero.${NC}"
 
         else
             echo -e "${RED}Error al crear el archivo de servicio. Verifica los permisos.${NC}"
