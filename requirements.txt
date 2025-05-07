@@ -1,9 +1,8 @@
 python-telegram-bot
-sqlite3
+gspread
+oauth2client
 python-dotenv
 requests
 schedule
-gunicorn
 Flask
-gspread
-oauth2client
+gunicorn

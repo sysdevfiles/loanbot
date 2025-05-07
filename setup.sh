@@ -48,7 +48,7 @@ PROJECT_PATH="${clone_parent_dir}/${PROJECT_DIR_NAME}"
 
 if [ -d "$PROJECT_PATH" ]; then
     echo -e "${YELLOW}El directorio del proyecto '$PROJECT_PATH' ya existe.${NC}"
-    read -p "$(echo -e ${YELLOW}¿Deseas eliminarlo y volver a clonar? (s/N): ${NC})" re_clone
+    read -p "$(echo -e ${YELLOW}¿Deseas eliminarlo y volver a clonar para una instalación completamente limpia? (s/N): ${NC})" re_clone
     if [[ "$re_clone" =~ ^[Ss]$ ]]; then
         echo -e "${CYAN}Eliminando directorio existente '$PROJECT_PATH'...${NC}"
         rm -rf "$PROJECT_PATH"
@@ -60,7 +60,7 @@ if [ -d "$PROJECT_PATH" ]; then
         fi
         echo -e "${GREEN}Repositorio clonado exitosamente en '$PROJECT_PATH'.${NC}"
     else
-        echo -e "${YELLOW}Usando el directorio existente '$PROJECT_PATH'. Asegúrate de que contenga los archivos correctos.${NC}"
+        echo -e "${YELLOW}Usando el directorio existente '$PROJECT_PATH'. Se intentará limpiar el entorno virtual si existe.${NC}"
     fi
 else
     echo -e "${CYAN}Clonando repositorio '$REPO_URL' en '$PROJECT_PATH'...${NC}"
@@ -79,6 +79,17 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 echo -e "${GREEN}Directorio actual: $(pwd)${NC}"
+
+# Limpiar venv preexistente si no se re-clonó y existe
+if [[ ! "$re_clone" =~ ^[Ss]$ ]] && [ -d "venv" ]; then
+    echo -e "${YELLOW}Directorio 'venv' existente encontrado. Eliminándolo para una instalación limpia del entorno virtual...${NC}"
+    rm -rf "venv"
+    if [ $? -ne 0 ]; then
+        echo -e "${RED}Error al eliminar el directorio 'venv' existente. Puede que necesites hacerlo manualmente.${NC}"
+    else
+        echo -e "${GREEN}Directorio 'venv' anterior eliminado.${NC}"
+    fi
+fi
 
 # Paso 1: Verificar Python (ahora Paso B)
 echo -e "\n${CYAN}[Paso B/7] Verificando instalación de Python 3...${NC}"
@@ -147,14 +158,25 @@ default_google_worksheet_name="ControlPréstamos" # Default worksheet name
 # Default path for the OAuth client secret JSON file
 default_google_oauth_secret_file="config/client_secret_oauth.json" # Nombre genérico para el archivo que creará el script
 
-read -p "$(echo -e ${YELLOW}Ingresa tu TELEGRAM_BOT_TOKEN: ${NC})" telegram_bot_token
-read -p "$(echo -e ${YELLOW}Ingresa tu TELEGRAM_ADMIN_ID (opcional, para comandos de administrador): ${NC})" telegram_admin_id
+# Corregir la sintaxis de read -p. No se necesita $(echo -e ...) para el prompt.
+# Simplemente se usa la cadena directamente con -e para interpretar escapes si es necesario con bash,
+# o se pueden poner los códigos de color directamente en la cadena.
+# Para mayor portabilidad y simplicidad, se pueden definir las cadenas de prompt antes.
+
+prompt_telegram_token="${YELLOW}Ingresa tu TELEGRAM_BOT_TOKEN: ${NC}"
+prompt_telegram_admin_id="${YELLOW}Ingresa tu TELEGRAM_ADMIN_ID (opcional, para comandos de administrador): ${NC}"
+prompt_google_sheet_name="${YELLOW}Nombre de tu Hoja de Cálculo de Google (Spreadsheet Name) [${default_google_sheet_name}]: ${NC}"
+prompt_google_worksheet_name="${YELLOW}Nombre de la Hoja de Trabajo específica (Worksheet Name) [${default_google_worksheet_name}]: ${NC}"
+prompt_google_oauth_file_path="${YELLOW}Ruta donde se creará el archivo JSON para tus credenciales de cliente OAuth 2.0 (relativa al proyecto, ej. ${default_google_oauth_secret_file}) [${default_google_oauth_secret_file}]: ${NC}"
+
+read -p "$prompt_telegram_token" telegram_bot_token
+read -p "$prompt_telegram_admin_id" telegram_admin_id
 # No longer asking for database_name
-read -p "$(echo -e ${YELLOW}Nombre de tu Hoja de Cálculo de Google (Spreadsheet Name) [${default_google_sheet_name}]: ${NC})" google_sheet_name
+read -p "$prompt_google_sheet_name" google_sheet_name
 google_sheet_name="${google_sheet_name:-$default_google_sheet_name}"
-read -p "$(echo -e ${YELLOW}Nombre de la Hoja de Trabajo específica (Worksheet Name) [${default_google_worksheet_name}]: ${NC})" google_worksheet_name
+read -p "$prompt_google_worksheet_name" google_worksheet_name
 google_worksheet_name="${google_worksheet_name:-$default_google_worksheet_name}"
-read -p "$(echo -e ${YELLOW}Ruta donde se creará el archivo JSON para tus credenciales de cliente OAuth 2.0 (relativa al proyecto, ej. ${default_google_oauth_secret_file}) [${default_google_oauth_secret_file}]: ${NC})" google_oauth_client_secret_file_to_create
+read -p "$prompt_google_oauth_file_path" google_oauth_client_secret_file_to_create
 google_oauth_client_secret_file_to_create="${google_oauth_client_secret_file_to_create:-$default_google_oauth_secret_file}"
 
 # Crear el directorio para el archivo JSON si no existe
@@ -166,7 +188,9 @@ if [ ! -d "$google_oauth_secret_dir" ]; then
     mkdir -p "$google_oauth_secret_dir"
     if [ $? -ne 0 ]; then
         echo -e "${RED}Error: No se pudo crear el directorio $google_oauth_secret_dir.${NC}"
-        # Considerar salir del script o continuar
+        echo -e "${YELLOW}Por favor, crea este directorio manualmente y re-ejecuta el script, o verifica los permisos.${NC}"
+        # Considerar salir del script o continuar sin crear el archivo JSON
+        # exit 1; # Podrías añadir un exit si es crítico
     fi
 fi
 
@@ -226,12 +250,6 @@ read -p "$(echo -e ${YELLOW}¿Deseas configurar el bot como un servicio systemd 
 if [[ "$setup_service" =~ ^[Ss]$ ]]; then
     echo -e "${CYAN}Configurando el servicio systemd...${NC}"
     
-    # El directorio del proyecto ya es el actual (pwd) debido al 'cd' anterior
-    # No es necesario preguntar de nuevo, usamos $(pwd)
-    # default_project_path=$(pwd)
-    # read -p "$(echo -e ${YELLOW}Ingresa la ruta absoluta al directorio del proyecto [${default_project_path}]: ${NC})" project_path
-    # project_path="${project_path:-$default_project_path}"
-    
     # Usar el directorio actual del proyecto clonado
     current_project_path=$(pwd)
 
@@ -240,6 +258,24 @@ if [[ "$setup_service" =~ ^[Ss]$ ]]; then
         echo -e "${RED}Error: La ruta del proyecto actual '$current_project_path' no es válida.${NC}"
         echo -e "${YELLOW}La configuración del servicio systemd se omitirá. Puedes hacerlo manualmente más tarde.${NC}"
     else
+        SERVICE_FILE_PATH="/etc/systemd/system/loanbot.service"
+        # Limpiar servicio systemd preexistente
+        if [ -f "$SERVICE_FILE_PATH" ]; then
+            echo -e "${YELLOW}Servicio 'loanbot.service' existente encontrado en '$SERVICE_FILE_PATH'.${NC}"
+            echo -e "${CYAN}Intentando detener y deshabilitar el servicio existente...${NC}"
+            systemctl stop loanbot.service >/dev/null 2>&1 # Best effort, silenciar errores
+            systemctl disable loanbot.service >/dev/null 2>&1 # Best effort, silenciar errores
+            echo -e "${CYAN}Eliminando archivo de servicio anterior '$SERVICE_FILE_PATH'...${NC}"
+            rm -f "$SERVICE_FILE_PATH"
+            if [ $? -eq 0 ]; then
+                echo -e "${GREEN}Archivo de servicio anterior eliminado.${NC}"
+            else
+                echo -e "${RED}No se pudo eliminar el archivo de servicio anterior. Puede que necesites hacerlo manualmente.${NC}"
+            fi
+            echo -e "${CYAN}Recargando demonio de systemd después de eliminar el servicio anterior...${NC}"
+            systemctl daemon-reload
+        fi
+
         service_file_content="[Unit]
 Description=Bot de Telegram para Gestión de Préstamos
 After=network.target
@@ -258,8 +294,8 @@ SyslogIdentifier=loanbot
 [Install]
 WantedBy=multi-user.target"
 
-        echo -e "${CYAN}Creando archivo de servicio en /etc/systemd/system/loanbot.service...${NC}"
-        echo "$service_file_content" > /etc/systemd/system/loanbot.service
+        echo -e "${CYAN}Creando archivo de servicio en $SERVICE_FILE_PATH...${NC}"
+        echo "$service_file_content" > "$SERVICE_FILE_PATH"
         
         if [ $? -eq 0 ]; then
             echo -e "${GREEN}Archivo de servicio creado exitosamente.${NC}"
