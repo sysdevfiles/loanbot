@@ -10,6 +10,8 @@ NC='\033[0m' # Sin Color
 # Variables del Repositorio
 REPO_URL="https://github.com/sysdevfiles/loanbot.git"
 PROJECT_DIR_NAME="ControlPréstamos" # Nombre del directorio donde se clonará el proyecto
+# Fijar la ruta padre para la clonación a /root
+CLONE_PARENT_DIR="/root"
 
 echo -e "${CYAN}=== Iniciando Configuración del Bot de Gestión de Préstamos para Ubuntu (como root) ===${NC}"
 
@@ -31,24 +33,29 @@ else
     echo -e "${GREEN}Git encontrado.${NC}"
 fi
 
-# Preguntar al usuario dónde clonar el proyecto
-current_dir=$(pwd)
-default_clone_parent_dir="$current_dir" # Por defecto, clonar en el directorio actual donde se ejecuta setup.sh
-
-read -p "$(echo -e ${YELLOW}Ingresa la ruta absoluta del directorio padre donde deseas clonar el proyecto '$PROJECT_DIR_NAME' [${default_clone_parent_dir}]: ${NC})" clone_parent_dir
-clone_parent_dir="${clone_parent_dir:-$default_clone_parent_dir}"
+# Ya no se pregunta al usuario dónde clonar, se usa CLONE_PARENT_DIR="/root"
+# current_dir=$(pwd)
+# default_clone_parent_dir="$current_dir" 
+# read -p "$(echo -e ${YELLOW}Ingresa la ruta absoluta del directorio padre donde deseas clonar el proyecto '$PROJECT_DIR_NAME' [${default_clone_parent_dir}]: ${NC})" clone_parent_dir
+# clone_parent_dir="${clone_parent_dir:-$default_clone_parent_dir}"
 
 # Asegurarse de que el directorio padre para la clonación exista
-if [ ! -d "$clone_parent_dir" ]; then
-    echo -e "${RED}Error: El directorio padre para la clonación '$clone_parent_dir' no existe.${NC}"
-    exit 1
+if [ ! -d "$CLONE_PARENT_DIR" ]; then
+    echo -e "${CYAN}El directorio padre para la clonación '$CLONE_PARENT_DIR' no existe. Intentando crearlo...${NC}"
+    mkdir -p "$CLONE_PARENT_DIR"
+    if [ $? -ne 0 ]; then
+        echo -e "${RED}Error: No se pudo crear el directorio padre para la clonación '$CLONE_PARENT_DIR'. Verifica los permisos.${NC}"
+        exit 1
+    fi
+    echo -e "${GREEN}Directorio padre '$CLONE_PARENT_DIR' creado exitosamente.${NC}"
 fi
 
-PROJECT_PATH="${clone_parent_dir}/${PROJECT_DIR_NAME}"
+PROJECT_PATH="${CLONE_PARENT_DIR}/${PROJECT_DIR_NAME}"
 
 if [ -d "$PROJECT_PATH" ]; then
     echo -e "${YELLOW}El directorio del proyecto '$PROJECT_PATH' ya existe.${NC}"
-    read -p "$(echo -e ${YELLOW}¿Deseas eliminarlo y volver a clonar para una instalación completamente limpia? (s/N): ${NC})" re_clone
+    prompt_re_clone="${YELLOW}¿Deseas eliminarlo y volver a clonar para una instalación completamente limpia? (s/N): ${NC}"
+    read -p "$prompt_re_clone" re_clone # Sintaxis corregida
     if [[ "$re_clone" =~ ^[Ss]$ ]]; then
         echo -e "${CYAN}Eliminando directorio existente '$PROJECT_PATH'...${NC}"
         rm -rf "$PROJECT_PATH"
@@ -140,7 +147,10 @@ echo -e "${GREEN}pip actualizado correctamente.${NC}"
 echo -e "\n${CYAN}[Paso F/7] Instalando dependencias desde requirements.txt...${NC}"
 if [ -f requirements.txt ]; then
     pip3 install -r requirements.txt # Asegurando el uso explícito de pip3
-    echo -e "${GREEN}Dependencias instaladas correctamente.${NC}"
+    # El script continuará incluso si hay un error aquí (como con sqlite3)
+    # Es importante que el requirements.txt en el repo esté correcto.
+    echo -e "${GREEN}Intento de instalación de dependencias completado.${NC}"
+    echo -e "${YELLOW}Nota: Si ves errores relacionados con 'sqlite3', debes eliminarlo del archivo 'requirements.txt' en tu repositorio de GitHub.${NC}"
 else
     echo -e "${RED}Error: ¡requirements.txt no encontrado!${NC}"
     # No es necesario desactivar aquí si el script va a salir.
@@ -215,7 +225,8 @@ if [ $? -eq 0 ]; then
     echo -e "${YELLOW}AHORA, por favor, edita este archivo y pega el contenido de tu JSON de credenciales OAuth 2.0 descargado de Google Cloud Console.${NC}"
     echo -e "${YELLOW}Puedes usar nano: ${GREEN}nano \"$google_oauth_secret_file_full_path\"${NC}"
     echo -e "${YELLOW}Asegúrate de que el contenido final sea un JSON válido con tus credenciales reales.${NC}"
-    read -p "$(echo -e ${YELLOW}Presiona Enter cuando hayas terminado de editar y guardar el archivo JSON... ${NC})"
+    prompt_json_edited="${YELLOW}Presiona Enter cuando hayas terminado de editar y guardar el archivo JSON... ${NC}"
+    read -p "$prompt_json_edited" # Sintaxis corregida
 else
     echo -e "${RED}Error al crear el archivo JSON base en '$google_oauth_secret_file_full_path'.${NC}"
 fi
@@ -245,7 +256,8 @@ fi
 
 # Paso H: Configurar el servicio systemd interactivamente (antes Paso G, ahora H)
 echo -e "\n${CYAN}[Paso H/H] Configuración del servicio systemd (Opcional Interactivo)...${NC}"
-read -p "$(echo -e ${YELLOW}¿Deseas configurar el bot como un servicio systemd ahora? (s/N): ${NC})" setup_service
+prompt_setup_service="${YELLOW}¿Deseas configurar el bot como un servicio systemd ahora? (s/N): ${NC}"
+read -p "$prompt_setup_service" setup_service # Sintaxis corregida
 
 if [[ "$setup_service" =~ ^[Ss]$ ]]; then
     echo -e "${CYAN}Configurando el servicio systemd...${NC}"
