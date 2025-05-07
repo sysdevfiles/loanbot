@@ -1,0 +1,14 @@
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+*.db
+*.db-journal*
+
+# Google API credentials
+credentials.json
+token.json
+service_account.json
+*.pem
