@@ -340,8 +340,32 @@ WantedBy=multi-user.target"
             systemctl enable loanbot.service
             
             echo -e "${GREEN}Servicio loanbot habilitado.${NC}"
-            
-            echo -e "${CYAN}Intentando iniciar el servicio loanbot ahora...${NC}"
+
+            echo -e "\n${YELLOW}ACCIÓN IMPORTANTE REQUERIDA AHORA PARA GOOGLE SHEETS:${NC}"
+            echo -e "${YELLOW}Se ejecutará el bot ('main.py') interactivamente UNA VEZ para que autorices el acceso a Google Sheets.${NC}"
+            echo -e "${YELLOW}Esto es necesario ANTES de que el servicio systemd pueda iniciar correctamente.${NC}"
+            echo -e "${CYAN}Pasos a seguir:${NC}"
+            echo -e "${CYAN}1. Cuando se te indique, sigue las instrucciones en la consola que aparecerán (probablemente abrir una URL en tu navegador y autorizar).${NC}"
+            echo -e "${CYAN}2. Una vez que el bot confirme la conexión a Google Sheets y veas un mensaje como 'Bot iniciado. Presiona Ctrl+C para detener.' (o similar),${NC}"
+            echo -e "${CYAN}   ${RED}PRESIONA Ctrl+C${CYAN} para detener esta ejecución manual. Esto devolverá el control a este script de configuración.${NC}"
+            echo -e "${YELLOW}Presiona Enter para iniciar la ejecución manual de 'main.py' para la autorización...${NC}"
+            read -r
+
+            # Ejecutar main.py interactivamente para la autorización de Google.
+            # El entorno virtual ya está activado para la sesión de este script.
+            echo -e "${CYAN}Ejecutando 'python3 main.py' para autorización...${NC}"
+            if ! python3 "${current_project_path}/main.py"; then
+                # El usuario probablemente presionó Ctrl+C, lo cual es esperado.
+                # El código de salida para Ctrl+C es 130. Otros errores podrían ser diferentes.
+                # No trataremos esto como un error fatal del script setup.sh, ya que se espera Ctrl+C.
+                echo -e "${YELLOW}Ejecución manual de 'main.py' detenida (Ctrl+C esperado después de la autorización).${NC}"
+            else
+                # Si main.py sale con código 0 (lo cual es inusual si está en modo polling), también lo registramos.
+                echo -e "${GREEN}Ejecución manual de 'main.py' completada.${NC}"
+            fi
+
+            echo -e "\n${CYAN}Proceso de autorización manual completado.${NC}"
+            echo -e "${CYAN}Intentando iniciar el servicio loanbot ahora para que corra en segundo plano...${NC}"
             systemctl start loanbot.service
             
             echo -e "${CYAN}Esperando unos segundos para que el servicio se estabilice...${NC}"
@@ -350,18 +374,13 @@ WantedBy=multi-user.target"
             if systemctl is-active --quiet loanbot.service; then
                 echo -e "${GREEN}Servicio loanbot iniciado exitosamente y corriendo en segundo plano.${NC}"
             elif systemctl is-failed --quiet loanbot.service; then
-                echo -e "${RED}Error: El servicio loanbot falló al iniciar.${NC}"
-                echo -e "${YELLOW}CAUSA MÁS PROBABLE: La autorización inicial de Google Sheets no se ha completado.${NC}"
-                echo -e "${YELLOW}DEBES ejecutar el bot manualmente UNA VEZ para autorizar el acceso a Google Sheets:${NC}"
-                echo -e "${CYAN}1. Asegúrate de estar en el directorio del proyecto: ${GREEN}cd ${current_project_path}${NC}"
-                echo -e "${CYAN}2. Activa el entorno virtual: ${GREEN}source venv/bin/activate${NC}"
-                echo -e "${CYAN}3. Ejecuta el bot: ${GREEN}python3 main.py${NC}"
-                echo -e "${YELLOW}   Sigue las instrucciones en la consola (abrir URL en navegador, autorizar).${NC}"
-                echo -e "${YELLOW}   Una vez que el bot confirme conexión y funcione, detenlo con ${RED}Ctrl+C${YELLOW}.${NC}"
-                echo -e "${CYAN}4. Luego, intenta reiniciar el servicio: ${GREEN}systemctl restart loanbot.service${NC}"
+                echo -e "${RED}Error: El servicio loanbot falló al iniciar después del intento de autorización.${NC}"
+                echo -e "${YELLOW}Esto podría indicar que la autorización de Google no se completó correctamente o hay otro problema.${NC}"
+                echo -e "${YELLOW}Revisa los logs con: journalctl -u loanbot.service -n 50${NC}"
+                echo -e "${YELLOW}Si es necesario, detén el servicio (systemctl stop loanbot.service), ejecuta 'python3 main.py' manualmente de nuevo para asegurar la autorización, y luego reinicia el servicio (systemctl restart loanbot.service).${NC}"
             else
-                echo -e "${YELLOW}El estado del servicio loanbot es incierto. Puede que esté iniciando o haya tenido un problema.${NC}"
-                echo -e "${YELLOW}Verifica manualmente. Si no funciona, la causa más probable es la autorización de Google pendiente (ver pasos anteriores).${NC}"
+                echo -e "${YELLOW}El estado del servicio loanbot es incierto. Verifica manualmente con 'systemctl status loanbot.service'.${NC}"
+                echo -e "${YELLOW}Si no funciona, asegúrate de que la autorización de Google se haya completado correctamente.${NC}"
             fi
 
             echo -e "\n${CYAN}Comandos útiles para gestionar el servicio loanbot:${NC}"
@@ -412,7 +431,7 @@ echo -e "${CYAN}1.${NC} Revisa la sección ${YELLOW}'Instalación Detallada'${NC
 echo -e "   - Verificar la configuración del archivo ${YELLOW}'.env'${NC} (en ${PROJECT_PATH}/.env)."
 echo -e "   - Confirmar que hayas editado el archivo JSON de credenciales en ${GREEN}\"${google_oauth_secret_file_full_path}\"${NC} con tus datos reales usando un editor como nano."
 echo -e "   - Asegurarte de que las APIs ${YELLOW}Google Sheets API y Google Drive API${NC} estén habilitadas en Google Cloud Console para el proyecto correspondiente a tus credenciales."
-echo -e "   - Cuando ejecutes el bot por primera vez, sigue las instrucciones en la consola para ${YELLOW}autorizar el acceso a través de tu navegador${NC}."
+echo -e "   - ${GREEN}El script intentó guiarte a través de la autorización inicial de Google. Si el servicio systemd no funciona, revisa los logs y considera ejecutar 'python3 main.py' manualmente de nuevo en el directorio del proyecto para asegurar la autorización.${NC}"
 echo ""
 echo -e "${YELLOW}Para activar el entorno virtual en una nueva terminal, navega a '${PROJECT_PATH}' y usa: ${GREEN}source venv/bin/activate${NC}"
 echo -e "${YELLOW}Para desactivar el entorno virtual (en la sesión actual del script, si aún está activa), escribe: ${GREEN}deactivate${NC}"

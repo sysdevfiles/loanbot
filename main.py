@@ -2,7 +2,7 @@ import logging
 import os
 from dotenv import load_dotenv
 from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, Filters, ContextTypes
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes
 import sqlite3 # Assuming you use this for local DB
 
 # Import Google Sheets integration functions
