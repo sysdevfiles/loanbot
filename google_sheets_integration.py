@@ -2,6 +2,7 @@ import gspread
 # oauth2client.service_account is no longer needed for this auth method
 # from oauth2client.service_account import ServiceAccountCredentials
 import os
+import sys # Import sys para verificar la plataforma
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -34,27 +35,36 @@ def init_gspread_client(oauth_creds_file_path, sheet_name, worksheet_name):
         print("Si es la primera vez, se te pedirá que autorices el acceso en tu navegador.")
         print("Copia la URL que aparezca en la consola, ábrela en un navegador, autoriza, y copia el código de vuelta si se solicita.")
         
-        # gspread.oauth() uses the credentials file to guide the user through the OAuth flow
-        # and then stores the resulting authorized user credentials, typically in
-        # ~/.config/gspread/authorized_user.json (Linux/macOS) or
-        # %APPDATA%\gspread\authorized_user.json (Windows)
-        # It will use these stored credentials on subsequent runs.
-        # The `client_secret.json` (oauth_creds_file_path) is needed for the initial flow.
-        # The `scopes` argument is important here.
-        client = gspread.oauth(
-            credentials_filename=oauth_creds_file_path,
-            authorized_user_filename=os.path.join(os.path.expanduser("~"), ".config", "gspread", "loanbot_authorized_user.json"), # Example of a custom path for stored tokens
-            scopes=SCOPE
-        )
-        # You can customize the authorized_user_filename path if needed,
-        # for example, to store it within your project directory (ensure .gitignore covers it).
-        # Default path for authorized_user.json:
-        # Linux/macOS: ~/.config/gspread/authorized_user.json
-        # Windows: %APPDATA%\gspread\authorized_user.json
-        # For simplicity and to avoid potential permission issues with default paths in some environments,
-        # let's try to store it in the project's config directory if possible, or use gspread's default.
-        # A good practice is to make this path configurable or place it in a known writable location.
-        # For now, using a custom path within the user's home .config directory but specific to the bot.
+        # Workaround for "could not locate runnable browser" in headless environments
+        original_browser_env = os.environ.get("BROWSER")
+        browser_env_set_by_script = False
+        # Este workaround es más relevante para entornos Linux headless.
+        if "linux" in sys.platform.lower():
+            os.environ["BROWSER"] = "echo" # 'echo' es un comando que no fallará
+            browser_env_set_by_script = True
+            print(f"INFO: Temporalmente se ha establecido BROWSER=echo para facilitar el flujo OAuth en un entorno headless.")
+
+        client = None # Inicializar client a None
+        try:
+            # gspread.oauth() uses the credentials file to guide the user through the OAuth flow
+            # and then stores the resulting authorized user credentials.
+            client = gspread.oauth(
+                credentials_filename=oauth_creds_file_path,
+                authorized_user_filename=os.path.join(os.path.expanduser("~"), ".config", "gspread", "loanbot_authorized_user.json"),
+                scopes=SCOPE
+            )
+        finally:
+            # Restaurar la variable de entorno BROWSER si la modificamos
+            if browser_env_set_by_script:
+                if original_browser_env is None:
+                    del os.environ["BROWSER"]
+                else:
+                    os.environ["BROWSER"] = original_browser_env
+                print(f"INFO: Variable de entorno BROWSER restaurada a su valor original.")
+        
+        if not client: # Si client sigue siendo None después del intento de oauth
+            print("Error: Falló la inicialización del cliente de gspread después del intento de OAuth.")
+            return None
 
         spreadsheet = client.open(sheet_name)
         worksheet = spreadsheet.worksheet(worksheet_name)
