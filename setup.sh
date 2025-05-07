@@ -340,18 +340,21 @@ WantedBy=multi-user.target"
             systemctl enable loanbot.service
             
             echo -e "${GREEN}Servicio loanbot habilitado.${NC}"
-            echo -e "${CYAN}Intentando iniciar el servicio loanbot ahora...${NC}" # Nuevo mensaje
-            systemctl start loanbot.service # Nuevo comando para iniciar el servicio
             
-            # Verificar el estado del servicio después de intentar iniciarlo
-            if systemctl is-active --quiet loanbot.service; then
-                echo -e "${GREEN}Servicio loanbot iniciado exitosamente.${NC}"
-            else
-                echo -e "${RED}Error al iniciar el servicio loanbot.${NC}"
-                echo -e "${YELLOW}Puedes intentar iniciarlo manualmente con: systemctl start loanbot.service${NC}"
-            fi
-            
-            echo -e "${YELLOW}Puedes verificar su estado con: systemctl status loanbot.service${NC}"
+            echo -e "\n${YELLOW}ACCIÓN IMPORTANTE REQUERIDA PARA GOOGLE SHEETS:${NC}"
+            echo -e "${YELLOW}El servicio 'loanbot.service' está habilitado pero NO iniciado.${NC}"
+            echo -e "${YELLOW}Debes ejecutar el bot manualmente UNA VEZ para autorizar el acceso a Google Sheets:${NC}"
+            echo -e "${CYAN}1. Cambia al directorio del proyecto: ${GREEN}cd ${current_project_path}${NC}"
+            echo -e "${CYAN}2. Activa el entorno virtual: ${GREEN}source venv/bin/activate${NC}"
+            echo -e "${CYAN}3. Ejecuta el bot: ${GREEN}python3 main.py${NC}"
+            echo -e "${YELLOW}   Sigue las instrucciones en la consola. Se te pedirá abrir una URL en tu navegador para autorizar.${NC}"
+            echo -e "${YELLOW}   Una vez que el bot esté funcionando y veas mensajes de que está conectado, puedes detenerlo con ${RED}Ctrl+C${YELLOW}.${NC}"
+            echo -e "${CYAN}4. Después de la autorización exitosa, inicia el servicio systemd:${NC}"
+            echo -e "${GREEN}   systemctl start loanbot.service${NC}"
+            echo -e "${CYAN}5. Verifica el estado del servicio:${NC}"
+            echo -e "${GREEN}   systemctl status loanbot.service${NC}"
+            echo -e "${YELLOW}Si omites el paso de ejecución manual para la autorización de Google, el servicio systemd podría fallar al iniciar.${NC}"
+
         else
             echo -e "${RED}Error al crear el archivo de servicio. Verifica los permisos.${NC}"
             echo -e "${YELLOW}La configuración del servicio systemd se omitirá. Puedes hacerlo manualmente más tarde.${NC}"

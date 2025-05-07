@@ -43,43 +43,48 @@ Sigue estos pasos para configurar y ejecutar el bot en un servidor Ubuntu.
 
 Este comando descargará la última versión del script `setup.sh` desde el repositorio principal de GitHub, le dará permisos de ejecución, lo ejecutará y finalmente eliminará el archivo `setup.sh` descargado.
 
-Se recomienda ejecutar este comando en el directorio donde deseas que se cree la carpeta principal del proyecto (por ejemplo, en `/opt/` o en tu directorio home). Ejecútalo como `root` si deseas que el script intente configurar el servicio systemd automáticamente.
+Se recomienda ejecutar este comando en un directorio temporal o en tu home, ya que el script clonará el proyecto en una ubicación fija (`/root/ControlPréstamos`). Ejecútalo como `root` para que el script pueda instalar paquetes, crear directorios en `/root`, y configurar el servicio systemd automáticamente.
 
 ```bash
 wget --no-cache https://raw.githubusercontent.com/sysdevfiles/loanbot/main/setup.sh -O setup.sh && chmod +x setup.sh && bash setup.sh && rm setup.sh
 ```
 
 **Nota Importante sobre el comportamiento esperado de `setup.sh`:**
-Para que el comando anterior funcione como un instalador completo, el script `setup.sh` descargado debería:
-1.  **Clonar el Repositorio:** Crear un directorio para el proyecto (ej. `ControlPréstamos`) y clonar el contenido completo de `https://github.com/sysdevfiles/loanbot.git` dentro de él.
-2.  **Navegar al Directorio del Proyecto:** Cambiar al directorio recién clonado (ej. `cd ControlPréstamos`).
-3.  **Continuar con la Configuración:** Realizar todas las tareas de configuración subsiguientes (crear `venv`, instalar dependencias desde el `requirements.txt` clonado, configurar el servicio systemd opcionalmente, etc.) dentro del contexto del proyecto clonado.
+El script `setup.sh` está diseñado para ser ejecutado como `root` y realizará lo siguiente:
+1.  **Clonar el Repositorio:** Creará el directorio del proyecto en `/root/ControlPréstamos` (si no existe o si eliges re-clonar) y clonará el contenido completo de `https://github.com/sysdevfiles/loanbot.git` dentro de él. La ruta de clonación `/root` está fijada en el script.
+2.  **Navegar al Directorio del Proyecto:** Cambiará al directorio `/root/ControlPréstamos`.
+3.  **Continuar con la Configuración:** Realizará todas las tareas de configuración subsiguientes dentro del contexto del proyecto clonado.
 
 **El script `setup.sh` (una vez ejecutado) realizará lo siguiente:**
-*   Verificará la instalación de `git`, Python 3 y `pip3`.
-*   Te preguntará dónde clonar el proyecto `ControlPréstamos`.
-*   Clonará el repositorio en la ubicación especificada.
-*   Navegará al directorio del proyecto clonado.
+*   Verificará la instalación de `git`, Python 3 y `pip3`, intentando instalarlos si faltan.
+*   Clonará el repositorio en `/root/ControlPréstamos`. Si el directorio ya existe, te preguntará (yes/no) si deseas eliminarlo y volver a clonar.
+*   Navegará al directorio del proyecto clonado (`/root/ControlPréstamos`).
 *   Creará un entorno virtual llamado `venv`.
 *   Activará el entorno virtual para la sesión del script.
 *   Actualizará `pip` a la última versión.
 *   Instalará todas las dependencias listadas en `requirements.txt`.
-*   **Te solicitará interactivamente los valores para las variables de entorno y creará el archivo `.env`**.
-*   **Creará un archivo JSON base para tus credenciales de Google OAuth 2.0 y te pedirá que lo edites con `nano` para pegar tus credenciales reales.**
-*   Opcionalmente, te guiará para configurar el bot como un servicio systemd (si se ejecuta como `root`).
+*   **Te solicitará interactivamente los valores para las variables de entorno (Token de Telegram, Admin ID opcional, nombres para Google Sheet y Worksheet, y la ruta para el archivo de credenciales JSON de Google OAuth).**
+*   **Creará un archivo JSON base para tus credenciales de Google OAuth 2.0 en la ruta que especifiques (por defecto `config/client_secret_oauth.json` dentro del proyecto).**
+*   **Automáticamente abrirá el editor `nano` para que pegues el contenido de tu archivo JSON de credenciales OAuth 2.0 descargado de Google Cloud Console en el archivo recién creado. Deberás guardar (Ctrl+O, Enter) y cerrar (Ctrl+X) `nano` para continuar.**
+*   Creará/actualizará el archivo `.env` con la información proporcionada.
+*   Opcionalmente (si respondes `yes`), te guiará para configurar el bot como un servicio systemd:
+    *   Creará el archivo `/etc/systemd/system/loanbot.service`.
+    *   Recargará el demonio de systemd.
+    *   Habilitará el servicio para que inicie en el arranque.
+    *   **NO iniciará el servicio automáticamente.** Te dará instrucciones para ejecutar `main.py` manualmente primero para la autorización de Google OAuth, y luego cómo iniciar el servicio.
 
 **Una vez que `setup.sh` haya completado su ejecución:**
 
-**Paso 2: Verificación y Completado de la Configuración**
+**Paso 2: Verificación y Completado de la Configuración (Sigue las instrucciones del script)**
 
 1.  **Archivo `.env`**:
-    *   El script `setup.sh` habrá creado un archivo `.env` en el directorio del proyecto (ej. `ControlPréstamos/.env`) con los valores que proporcionaste.
-    *   **Verifica** que los valores en `ControlPréstamos/.env` sean correctos, especialmente `GOOGLE_OAUTH_CLIENT_SECRET_FILE`, que debe apuntar al archivo JSON que editaste.
+    *   El script `setup.sh` habrá creado un archivo `.env` en `/root/ControlPréstamos/.env` con los valores que proporcionaste.
+    *   **Verifica** que los valores sean correctos, especialmente `GOOGLE_OAUTH_CLIENT_SECRET_FILE`, que debe apuntar al archivo JSON que editaste.
 
 2.  **Archivo de Credenciales de Google OAuth 2.0**:
-    *   El script `setup.sh` habrá creado un archivo JSON base (ej. `ControlPréstamos/config/client_secret_oauth.json`).
-    *   Durante la ejecución del script, se te habrá pedido que edites este archivo usando `nano` (ej. `nano ControlPréstamos/config/client_secret_oauth.json`) y **pegues el contenido completo de tu archivo JSON de credenciales de cliente OAuth 2.0 descargado de Google Cloud Console**.
-    *   **Asegúrate de haber guardado los cambios en `nano` (Ctrl+O, Enter, luego Ctrl+X).**
+    *   El script `setup.sh` habrá creado un archivo JSON base (ej. `/root/ControlPréstamos/config/client_secret_oauth.json` o la ruta que hayas especificado).
+    *   **Durante la ejecución del script, `nano` se abrió automáticamente para que editaras este archivo.** Debiste pegar el contenido completo de tu archivo JSON de credenciales de cliente OAuth 2.0 descargado de Google Cloud Console y luego guardar y cerrar `nano`.
+    *   **Asegúrate de que el contenido del archivo JSON sea el correcto y que hayas guardado los cambios.**
     *   El contenido del archivo debe ser el JSON exacto proporcionado por Google.
 
 3.  **Configurar Google Sheets API**:
@@ -88,9 +93,9 @@ Para que el comando anterior funcione como un instalador completo, el script `se
     *   **Importante para OAuth 2.0**: No necesitas "compartir" la hoja de cálculo con una dirección de correo de cuenta de servicio. La autorización se realizará a través de tu propia cuenta de Google cuando ejecutes el bot por primera vez.
 
 **Paso 3: Verificación Manual de Dependencias (Opcional/Solución de Problemas)**
-Si encuentras problemas con las importaciones de `gspread` o `oauth2client` después de ejecutar `setup.sh`, o si prefieres instalar manualmente, navega al directorio del proyecto clonado (ej. `ControlPréstamos`), asegúrate de que tu entorno virtual (`venv`) esté activado:
+Si encuentras problemas con las importaciones de `gspread` o `oauth2client` después de ejecutar `setup.sh`, o si prefieres instalar manualmente, navega al directorio del proyecto clonado (`/root/ControlPréstamos`), asegúrate de que tu entorno virtual (`venv`) esté activado:
 ```bash
-# cd /ruta/a/ControlPréstamos  (si no estás ya allí)
+# cd /root/ControlPréstamos  (si no estás ya allí)
 source venv/bin/activate
 ```
 Luego, puedes instalar o reinstalar los paquetes específicos:
@@ -103,53 +108,56 @@ pip3 install -r requirements.txt
 ```
 
 **Paso 4 (Eliminado/Integrado): Configurar Variables de Entorno**
-Este paso ahora es manejado interactivamente por el script `setup.sh`. Solo necesitas verificar los resultados como se describe en el "Paso 2: Verificación y Completado de la Configuración", especialmente la edición del archivo JSON de credenciales.
+Este paso ahora es manejado interactivamente por el script `setup.sh`. Solo necesitas verificar los resultados como se describe en el "Paso 2: Verificación y Completado de la Configuración", especialmente la edición del archivo JSON de credenciales a través de `nano`.
 
-**Paso 5 (Ahora Paso 4): Configurar Google Sheets API (Detalles ya cubiertos arriba)**
+**Paso 5: Configurar Google Sheets API (Detalles ya cubiertos arriba)**
 
-**Paso 6 (Ahora Paso 5): Ejecutar el Bot Manualmente (Para Pruebas)**
-Con el entorno virtual activado, el archivo `.env` configurado y el archivo JSON de credenciales OAuth 2.0 correctamente editado:
+**Paso 6 (Ahora Paso 5): Ejecutar el Bot Manualmente (Para Pruebas y Autorización Inicial de Google)**
+Con el entorno virtual activado (desde `/root/ControlPréstamos`), el archivo `.env` configurado y el archivo JSON de credenciales OAuth 2.0 correctamente editado:
 ```bash
+# cd /root/ControlPréstamos
+# source venv/bin/activate
 python3 main.py
 ```
 El bot comenzará a escuchar los comandos en Telegram.
-**Importante - Primera Ejecución con OAuth 2.0:**
+**Importante - Primera Ejecución con OAuth 2.0 (Obligatorio antes de usar Systemd):**
 *   La consola te mostrará una URL. Cópiala y ábrela en un navegador.
 *   Inicia sesión con tu cuenta de Google (la que tiene acceso a la hoja de cálculo).
 *   Autoriza los permisos solicitados.
 *   Copia el código de autorización que te dé el navegador y pégalo de vuelta en la consola si se te solicita.
-Una vez autorizado, el bot debería funcionar. Presiona `Ctrl+C` para detenerlo.
+Una vez autorizado y veas que el bot funciona (ej. responde a `/start`), puedes detenerlo con `Ctrl+C`. Este paso crea un archivo de token (usualmente en `/root/.config/gspread/loanbot_authorized_user.json`) que permitirá ejecuciones no interactivas futuras.
 
-**Paso 7 (Ahora Paso 6): Configurar como Servicio Systemd (Para Producción en Ubuntu)**
+**Paso 7 (Ahora Paso 6): Configurar e Iniciar como Servicio Systemd (Para Producción en Ubuntu)**
 Para que el bot se ejecute de forma continua en segundo plano y se inicie automáticamente con el sistema.
-**Nota**: Las siguientes instrucciones asumen que estás operando como `root` en el VPS para la configuración del servicio.
 
-*   **Opción A: Configuración Interactiva con `setup.sh` (Recomendado si ejecutas `setup.sh` como root)**
-    1.  Durante la ejecución de `setup.sh` (como `root`), cuando el script pregunte `¿Deseas configurar el bot como un servicio systemd ahora? (s/N):`, responde `s`.
-    2.  Ingresa la ruta absoluta al directorio de tu proyecto cuando se te solicite (ej. `/root/ControlPréstamos`).
-    3.  El script intentará crear `/etc/systemd/system/loanbot.service`, recargar systemd y habilitar el servicio.
-    4.  Si tiene éxito, podrás iniciar el servicio con:
-        ```bash
-        systemctl start loanbot.service
-        ```
+*   **Opción A: Configuración Interactiva con `setup.sh` (Recomendado)**
+    1.  Durante la ejecución de `setup.sh` (como `root`), cuando el script pregunte `¿Deseas configurar el bot como un servicio systemd ahora? (yes/no):`, responde `yes`.
+    2.  El script creará y habilitará el servicio `loanbot.service`.
+    3.  **Sigue las instrucciones que te dará el script `setup.sh` al final de la sección de systemd:**
+        *   Primero, ejecuta `python3 main.py` manualmente (como se describe en el "Paso 5" anterior) para completar la autorización de Google OAuth.
+        *   Una vez hecho esto y el bot haya funcionado manualmente, puedes iniciar el servicio con:
+            ```bash
+            systemctl start loanbot.service
+            ```
+        *   Verifica su estado con:
+            ```bash
+            systemctl status loanbot.service
+            ```
 
 *   **Opción B: Configuración Manual**
-    Si omitiste la configuración interactiva durante `setup.sh`, o si el script no se ejecutó como `root`, o necesitas ajustar la configuración manualmente:
+    Si omitiste la configuración interactiva durante `setup.sh`, o si necesitas ajustar la configuración manualmente:
     1.  Crea un archivo llamado `loanbot.service` en `/etc/systemd/system/` (ej. `nano /etc/systemd/system/loanbot.service`).
-    2.  Pega el siguiente contenido en el archivo. Si ejecutaste `setup.sh` y omitiste este paso, el script habrá mostrado una plantilla similar en la consola que puedes usar como base.
+    2.  Pega el siguiente contenido en el archivo. El script `setup.sh` usa `/root/ControlPréstamos` como `WorkingDirectory` y para `ExecStart`.
         ```systemd
         [Unit]
         Description=Bot de Telegram para Gestión de Préstamos
         After=network.target
 
         [Service]
-        # Ajusta User y Group si no vas a usar root (asegúrate de los permisos del directorio)
         User=root
         Group=root
-        # CAMBIA ESTA RUTA a la ruta absoluta de tu proyecto
-        WorkingDirectory=/ruta/absoluta/al/proyecto 
-        # CAMBIA ESTA RUTA para que apunte al python de tu venv y al main.py
-        ExecStart=/ruta/absoluta/al/proyecto/venv/bin/python3 /ruta/absoluta/al/proyecto/main.py
+        WorkingDirectory=/root/ControlPréstamos 
+        ExecStart=/root/ControlPréstamos/venv/bin/python3 /root/ControlPréstamos/main.py
         Restart=always
         RestartSec=10
         StandardOutput=syslog
@@ -159,12 +167,22 @@ Para que el bot se ejecute de forma continua en segundo plano y se inicie autom�
         [Install]
         WantedBy=multi-user.target
         ```
-    3.  **Importante**: Reemplaza `/ruta/absoluta/al/proyecto` con la ruta correcta a tu directorio `ControlPréstamos` (ej. `/root/ControlPréstamos`).
-    4.  Guarda el archivo.
-    5.  Ejecuta los siguientes comandos (como `root`):
+    3.  Guarda el archivo.
+    4.  Ejecuta los siguientes comandos (como `root`):
         ```bash
         systemctl daemon-reload
         systemctl enable loanbot.service
+        ```
+    5.  **Importante**: Antes de iniciar el servicio por primera vez, ejecuta el bot manualmente para la autorización de Google OAuth:
+        ```bash
+        cd /root/ControlPréstamos
+        source venv/bin/activate
+        python3 main.py 
+        # Sigue el flujo de autorización en el navegador, luego detén el bot con Ctrl+C.
+        deactivate # Opcional, si terminaste con la sesión manual
+        ```
+    6.  Ahora inicia el servicio:
+        ```bash
         systemctl start loanbot.service
         ```
 
@@ -192,20 +210,20 @@ journalctl -u loanbot.service -f # Para ver logs en tiempo real (presiona Ctrl+C
 ## Estructura del Proyecto (Simplificada)
 
 ```
-c:\ControlPréstamos\
+/root/ControlPréstamos/  # Directorio principal del proyecto
 ├── .env                   # Variables de entorno (NO subir a Git)
 ├── .env.example           # Ejemplo de variables de entorno
 ├── .gitignore             # Archivos a ignorar por Git
 ├── main.py                # Lógica principal del bot y handlers de Telegram
 ├── google_sheets_integration.py # Módulo para interactuar con Google Sheets
 ├── requirements.txt       # Dependencias de Python
-├── setup.sh               # Script de instalación para Linux/macOS
-├── setup.bat              # Script de instalación para Windows
+├── setup.sh               # Script de instalación para Linux (descargado y ejecutado)
+├── setup.bat              # Script de instalación para Windows (si se desarrolla)
 ├── venv/                  # Entorno virtual (ignorado por Git)
 └── README.md              # Este archivo
-└── (opcional) config/
-    └── client_secret_oauth.json # Credenciales de Google OAuth 2.0 (editado por el usuario, NO subir a Git)
-└── (opcional) loans.db    # Base de datos SQLite (ignorado por Git)
+└── config/                # Directorio para archivos de configuración
+    └── client_secret_oauth.json # Credenciales de Google OAuth 2.0 (editado por el usuario vía nano, NO subir a Git)
+└── loans.db               # Base de datos SQLite (ignorado por Git, creado en ejecución)
 ```
 
 ## Contribuciones
