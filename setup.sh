@@ -39,6 +39,8 @@ fi
 # read -p "$(echo -e ${YELLOW}Ingresa la ruta absoluta del directorio padre donde deseas clonar el proyecto '$PROJECT_DIR_NAME' [${default_clone_parent_dir}]: ${NC})" clone_parent_dir
 # clone_parent_dir="${clone_parent_dir:-$default_clone_parent_dir}"
 
+echo -e "${CYAN}El proyecto se clonará en el directorio padre: ${CLONE_PARENT_DIR}${NC}"
+
 # Asegurarse de que el directorio padre para la clonación exista
 if [ ! -d "$CLONE_PARENT_DIR" ]; then
     echo -e "${CYAN}El directorio padre para la clonación '$CLONE_PARENT_DIR' no existe. Intentando crearlo...${NC}"
@@ -309,7 +311,7 @@ WantedBy=multi-user.target"
         echo -e "${CYAN}Creando archivo de servicio en $SERVICE_FILE_PATH...${NC}"
         echo "$service_file_content" > "$SERVICE_FILE_PATH"
         
-        if [ $? -eq 0 ]; then
+        if [ $? -eq 0]; then
             echo -e "${GREEN}Archivo de servicio creado exitosamente.${NC}"
             
             echo -e "${CYAN}Recargando demonio de systemd...${NC}"
