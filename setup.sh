@@ -148,15 +148,17 @@ echo -e "${GREEN}pip actualizado correctamente.${NC}"
 # Paso 5: Instalar dependencias (ahora Paso F)
 echo -e "\n${CYAN}[Paso F/7] Instalando dependencias desde requirements.txt...${NC}"
 if [ -f requirements.txt ]; then
-    pip3 install -r requirements.txt # Asegurando el uso explícito de pip3
-    pip3 install python-telegram-bot google-auth google-auth-oauthlib google-auth-httplib2 googleapiclient
-    # El script continuará incluso si hay un error aquí (como con sqlite3)
-    # Es importante que el requirements.txt en el repo esté correcto.
+    pip3 install -r requirements.txt
+    # Instalar el paquete de desarrollo de SQLite si no está presente (para Python)
+    if ! python3 -c "import sqlite3" 2>/dev/null; then
+        echo -e "${YELLOW}sqlite3 no encontrado en Python. Intentando instalar dependencias del sistema...${NC}"
+        apt-get update
+        apt-get install -y libsqlite3-dev
+        # Recomendar reinstalar Python si sigue sin funcionar
+    fi
     echo -e "${GREEN}Intento de instalación de dependencias completado.${NC}"
-    echo -e "${YELLOW}Nota: Si ves errores relacionados con 'sqlite3', debes eliminarlo del archivo 'requirements.txt' en tu repositorio de GitHub.${NC}"
 else
     echo -e "${RED}Error: ¡requirements.txt no encontrado!${NC}"
-    # No es necesario desactivar aquí si el script va a salir.
     exit 1
 fi
 
@@ -217,60 +219,16 @@ if [ ! -d "$google_oauth_secret_dir" ]; then
 fi
 
 # Crear un archivo JSON vacío o con estructura mínima para que el usuario lo edite
-echo -e "${CYAN}Creando archivo JSON base en '$google_oauth_secret_file_full_path' para que pegues tus credenciales...${NC}"
-cat << EOF_JSON_BASE > "$google_oauth_secret_file_full_path"
-{
-  "installed": {
-    "client_id": "TU_CLIENT_ID_AQUI",
-    "project_id": "TU_PROJECT_ID_AQUI",
-    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-    "token_uri": "https://oauth2.googleapis.com/token",
-    "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-    "client_secret": "TU_CLIENT_SECRET_AQUI",
-    "redirect_uris": ["http://localhost"]
-  }
-}
-EOF_JSON_BASE
-
-if [ $? -eq 0 ]; then
-    echo -e "${GREEN}Archivo JSON base creado exitosamente en '$google_oauth_secret_file_full_path'.${NC}"
-    echo -e "${YELLOW}Se abrirá nano para que pegues el contenido de tu JSON de credenciales OAuth 2.0 descargado de Google Cloud Console.${NC}"
-    echo -e "${YELLOW}Pega el contenido, guarda los cambios (Ctrl+O, Enter) y cierra nano (Ctrl+X) para continuar.${NC}"
-    
-    # Abrir nano para editar el archivo
-    if command -v nano &> /dev/null; then
-        nano "$google_oauth_secret_file_full_path"
-        echo -e "${GREEN}Edición de archivo JSON completada.${NC}"
-    else
-        echo -e "${RED}Comando 'nano' no encontrado. Por favor, edita el archivo manualmente:${NC}"
-        echo -e "${GREEN}\"$google_oauth_secret_file_full_path\"${NC}"
-        echo -e "${YELLOW}Luego presiona Enter para continuar...${NC}"
-        read # Pausa para edición manual si nano no está
-    fi
-else
-    echo -e "${RED}Error al crear el archivo JSON base en '$google_oauth_secret_file_full_path'.${NC}"
-fi
-
-# Validar que el archivo JSON tenga ambos redirect_uris
-if grep -q "urn:ietf:wg:oauth:2.0:oob" "/root/ControlPréstamos/config/client_secret_oauth.json" && grep -q "http://localhost" "/root/ControlPréstamos/config/client_secret_oauth.json"; then
-    echo -e "${GREEN}El archivo de credenciales contiene ambos redirect_uris necesarios.${NC}"
-else
-    echo -e "${RED}ADVERTENCIA: El archivo de credenciales JSON NO contiene ambos redirect_uris ('http://localhost' y 'urn:ietf:wg:oauth:2.0:oob').${NC}"
-    echo -e "${YELLOW}Esto puede causar errores de autenticación en servidores/headless.${NC}"
-    echo -e "${YELLOW}Edita el archivo y asegúrate de que la sección 'redirect_uris' tenga ambos valores antes de continuar.${NC}"
-    read -p "Presiona Enter para continuar después de corregir el archivo..."
-fi
+# (opcional, puedes eliminar toda la sección de Google si ya no usas OAuth)
+# ...puedes eliminar desde aquí...
+# Crear un archivo JSON base en '$google_oauth_secret_file_full_path' para que pegues tus credenciales...
+# ...hasta aquí si ya no usas Google Sheets...
 
 echo -e "${CYAN}Creando/Actualizando archivo '$env_file_path'...${NC}"
 cat << EOF > "$env_file_path"
 TELEGRAM_BOT_TOKEN=${telegram_bot_token}
 TELEGRAM_ADMIN_ID=${telegram_admin_id}
 DATABASE_NAME=loans.db
-
-# Google Sheets Integration
-GOOGLE_SHEET_NAME="${google_sheet_name}"
-GOOGLE_SHEET_WORKSHEET_NAME="${google_worksheet_name}"
-GOOGLE_OAUTH_CLIENT_SECRET_FILE="${google_oauth_client_secret_file_to_create}"
 EOF
 
 if [ $? -eq 0 ]; then
@@ -279,7 +237,6 @@ if [ $? -eq 0 ]; then
     if [ -n "$telegram_admin_id" ]; then
         echo -e "${YELLOW}TELEGRAM_ADMIN_ID configurado como: ${telegram_admin_id}${NC}"
     fi
-    echo -e "${YELLOW}La primera vez que ejecutes el bot, se te pedirá autorizar el acceso a Google Sheets/Drive a través de tu navegador, usando el archivo JSON recién creado.${NC}"
 else
     echo -e "${RED}Error al crear/actualizar el archivo .env.${NC}"
 fi
