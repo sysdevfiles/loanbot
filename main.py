@@ -4,7 +4,7 @@ import sqlite3
 import csv
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
-from telegram import Update, InputFile, ReplyKeyboardMarkup, KeyboardButton
+from telegram import Update, InputFile, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters, ConversationHandler
 
 load_dotenv()
@@ -31,9 +31,15 @@ def init_db():
             payment_due_date TEXT,
             status TEXT,
             paid_amount REAL,
-            creation_date TEXT
+            creation_date TEXT,
+            current_capital REAL
         )
     """)
+    # Migración para agregar current_capital si no existe
+    try:
+        cursor.execute("ALTER TABLE loans ADD COLUMN current_capital REAL")
+    except sqlite3.OperationalError:
+        pass  # Ya existe
     conn.commit()
     conn.close()
 
@@ -42,14 +48,28 @@ def db_add_loan(loan_id, user_id, user_name, client_name, amount, interest, paym
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("""
-            INSERT INTO loans (loan_id, user_id, user_name, client_name, amount, interest, payment_due_date, status, paid_amount, creation_date)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (loan_id, user_id, user_name, client_name, amount, interest, payment_due_date, status, paid_amount, creation_date))
+            INSERT INTO loans (loan_id, user_id, user_name, client_name, amount, interest, payment_due_date, status, paid_amount, creation_date, current_capital)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (loan_id, user_id, user_name, client_name, amount, interest, payment_due_date, status, paid_amount, creation_date, amount))
         conn.commit()
         conn.close()
         return True
     except Exception as e:
         print(f"Error adding loan: {e}")
+        return False
+
+def db_update_loan_status_and_capital(loan_id, new_status, new_paid_amount, new_current_capital):
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE loans SET status = ?, paid_amount = ?, current_capital = ? WHERE loan_id = ?
+        """, (new_status, new_paid_amount, new_current_capital, loan_id))
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"Error updating loan: {e}")
         return False
 
 def db_update_loan_status(loan_id, new_status, new_paid_amount):
@@ -111,15 +131,15 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
-    if (text == "📝 Nuevo Préstamo"):
+    if text == "📝 Nuevo Préstamo":
         await new_loan_command(update, context)
-    elif (text == "💳 Pagar Cuota"):
-        await update.message.reply_text("Usa el comando: /pay <ID_Préstamo> <MontoPagado> 💳")
-    elif (text == "📋 Listar Préstamos"):
+    elif text == "💳 Pagar Cuota":
+        await pay_select_client(update, context)
+    elif text == "📋 Listar Préstamos":
         await list_loans_command(update, context)
-    elif (text == "💾 Backup CSV"):
+    elif text == "💾 Backup CSV":
         await backup_command(update, context)
-    elif (text == "📊 Saldos"):
+    elif text == "📊 Saldos":
         await saldos_command(update, context)
     else:
         await update.message.reply_text("Por favor, selecciona una opción del menú.")
@@ -159,30 +179,48 @@ async def pay_loan_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if dias_transcurridos < 0:
             dias_transcurridos = 0
 
-        # Fórmula de interés diario: (Tasa de Interés Anual / 365) * Capital
         interes_anual = 0.20
-        capital = loan["amount"]
-        interes_diario = (interes_anual / 365) * capital
+        capital_inicial = loan["amount"]
+        interes_diario = (interes_anual / 365) * capital_inicial
 
         pagado_anterior = loan["paid_amount"]
+        current_capital = loan["current_capital"] if loan["current_capital"] is not None else capital_inicial
 
-        # Saldo con interés diario simple acumulado
-        saldo = capital + (interes_diario * dias_transcurridos)
+        # Calcular cuota actual (20% del capital actual)
+        cuota = round(current_capital * 0.20, 2)
+        pago_restante = payment
+        nuevo_capital = current_capital
+
+        # Amortización: si el pago es mayor a la cuota, amortiza capital
+        while pago_restante > 0 and nuevo_capital > 0:
+            cuota_actual = round(nuevo_capital * 0.20, 2)
+            if pago_restante >= cuota_actual:
+                pago_restante -= cuota_actual
+                nuevo_capital -= (payment - pago_restante - (payment - pago_restante > cuota_actual and cuota_actual or pago_restante))
+            else:
+                nuevo_capital -= pago_restante
+                pago_restante = 0
+
+        nuevo_capital = max(nuevo_capital, 0)
+
+        # Interés diario sobre el capital inicial
+        saldo = capital_inicial + (interes_diario * dias_transcurridos)
         saldo -= pagado_anterior
         saldo -= payment
-
         saldo = max(saldo, 0)
         nuevo_pagado = pagado_anterior + payment
 
-        if saldo <= 0:
+        if saldo <= 0 or nuevo_capital <= 0:
             new_status = "Pagado"
         else:
             new_status = "Parcialmente Pagado"
 
-        if db_update_loan_status(loan_id_to_update, new_status, nuevo_pagado):
+        if db_update_loan_status_and_capital(loan_id_to_update, new_status, nuevo_pagado, nuevo_capital):
             await update.message.reply_text(
                 f"💰 Pago registrado para préstamo {loan_id_to_update}.\n"
                 f"Pagado total: {nuevo_pagado:.2f}\n"
+                f"Capital inicial: {capital_inicial:.2f}\n"
+                f"Capital actual: {nuevo_capital:.2f}\n"
                 f"Saldo actualizado (con interés diario): {saldo:.2f}\n"
                 f"Estado: {new_status}"
             )
@@ -215,10 +253,13 @@ async def list_loans_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return
     msg = "📋 <b>Préstamos registrados:</b>\n\n"
     for loan in loans:
+        capital_inicial = loan["amount"]
+        capital_actual = loan["current_capital"] if loan["current_capital"] is not None else capital_inicial
         msg += (
             f"🆔 {loan['loan_id']}\n"
             f"👤 Cliente: {loan['client_name']}\n"
-            f"💵 Capital: {loan['amount']}\n"
+            f"💵 Capital inicial: {capital_inicial}\n"
+            f"💵 Capital actual: {capital_actual}\n"
             f"💰 Interés: {loan['interest']}\n"
             f"📅 Fecha de registro: {loan['creation_date']}\n"
             f"📆 Fecha de pago: {loan['payment_due_date']}\n"
@@ -254,27 +295,14 @@ async def saldos_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = "📊 <b>Saldos de Clientes:</b>\n\n"
     for loan in loans:
         cliente = loan["client_name"]
-        capital = loan["amount"]
-        interes = loan["interest"]
+        capital_inicial = loan["amount"]
+        capital_actual = loan["current_capital"] if loan["current_capital"] is not None else capital_inicial
         pagado = loan["paid_amount"]
-        saldo = capital - pagado
-        cuota = round(capital * 0.20, 2)
-        # Si pagado > cuota, recalcula saldo/capital/couta en ciclo
-        pagos_restantes = pagado
-        nuevo_capital = capital
-        while pagos_restantes > 0 and nuevo_capital > 0:
-            cuota_actual = round(nuevo_capital * 0.20, 2)
-            if pagos_restantes >= cuota_actual:
-                pagos_restantes -= cuota_actual
-                nuevo_capital -= cuota_actual
-            else:
-                nuevo_capital -= pagos_restantes
-                pagos_restantes = 0
-        saldo_final = max(nuevo_capital, 0)
-        cuota_actual = round(saldo_final * 0.20, 2) if saldo_final > 0 else 0
+        cuota_actual = round(capital_actual * 0.20, 2) if capital_actual > 0 else 0
         msg += (
             f"👤 Cliente: {cliente}\n"
-            f"💵 Capital actual: {saldo_final}\n"
+            f"💵 Capital inicial: {capital_inicial}\n"
+            f"💵 Capital actual: {capital_actual}\n"
             f"💰 Próxima cuota (20%): {cuota_actual}\n"
             f"💸 Pagado: {pagado}\n"
             "-----------------------------\n"
@@ -285,6 +313,9 @@ async def saldos_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 ASK_CLIENT, ASK_AMOUNT = range(2)
 ASK_INTEREST = 2  # No se pregunta, pero se usa para el flujo
 ASK_CONFIRM = 3
+
+# Estados para pagar cuota
+PAY_SELECT_CLIENT, PAY_SELECT_LOAN, PAY_ENTER_AMOUNT = range(10, 13)
 
 async def new_loan_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
@@ -329,6 +360,110 @@ async def new_loan_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except ValueError:
         await update.message.reply_text("❌ Capital inválido. Ingresa solo números positivos:")
         return ASK_AMOUNT
+
+# --- Nuevo flujo para pagar cuota con selección de cliente ---
+
+async def pay_select_client(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    loans = db_get_all_loans()
+    clientes = list({loan["client_name"] for loan in loans if loan["status"] != "Pagado"})
+    if not clientes:
+        await update.message.reply_text("No hay clientes con préstamos pendientes.")
+        return ConversationHandler.END
+    context.user_data["clientes"] = clientes
+    keyboard = [[KeyboardButton(cliente)] for cliente in clientes]
+    await update.message.reply_text(
+        "Selecciona el cliente que va a realizar el pago:",
+        reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
+    )
+    return PAY_SELECT_CLIENT
+
+async def pay_receive_client(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    cliente = update.message.text.strip()
+    if cliente not in context.user_data.get("clientes", []):
+        await update.message.reply_text("Cliente no válido. Selecciona uno de la lista.")
+        return PAY_SELECT_CLIENT
+    context.user_data["cliente_pago"] = cliente
+    loans = db_get_all_loans()
+    prestamos_cliente = [loan for loan in loans if loan["client_name"] == cliente and loan["status"] != "Pagado"]
+    if not prestamos_cliente:
+        await update.message.reply_text("No hay préstamos pendientes para este cliente.")
+        return ConversationHandler.END
+    context.user_data["prestamos_cliente"] = prestamos_cliente
+    # Mostrar lista con ID, nombre y monto
+    msg = "Selecciona el préstamo a pagar:\n"
+    keyboard = []
+    for loan in prestamos_cliente:
+        msg += f"ID: {loan['loan_id']} | Monto: {loan['current_capital'] if loan['current_capital'] is not None else loan['amount']} | Cliente: {loan['client_name']}\n"
+        keyboard.append([KeyboardButton(loan["loan_id"])])
+    await update.message.reply_text(
+        msg,
+        reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
+    )
+    return PAY_SELECT_LOAN
+
+async def pay_receive_loan(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    loan_id = update.message.text.strip()
+    prestamos_cliente = context.user_data.get("prestamos_cliente", [])
+    loan = next((l for l in prestamos_cliente if l["loan_id"] == loan_id), None)
+    if not loan:
+        await update.message.reply_text("ID de préstamo no válido. Selecciona uno de la lista.")
+        return PAY_SELECT_LOAN
+    context.user_data["loan_pago"] = loan
+    await update.message.reply_text(
+        f"Ingrese el monto a pagar para el préstamo {loan_id} (capital actual: {loan['current_capital'] if loan['current_capital'] is not None else loan['amount']}):",
+        reply_markup=ReplyKeyboardRemove()
+    )
+    return PAY_ENTER_AMOUNT
+
+async def pay_process_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        payment = float(update.message.text.replace(",", "."))
+        if payment <= 0:
+            raise ValueError()
+        loan = context.user_data.get("loan_pago")
+        if not loan:
+            await update.message.reply_text("Error interno. Intenta de nuevo.")
+            return ConversationHandler.END
+
+        # Convertir fecha de registro al formato dd-mm-yyyy
+        fecha_registro = datetime.strptime(loan["creation_date"], "%d-%m-%Y")
+        fecha_hoy = datetime.now()
+        dias_transcurridos = (fecha_hoy - fecha_registro).days
+        if dias_transcurridos < 0:
+            dias_transcurridos = 0
+
+        # Fórmula de interés diario: (Tasa de Interés Anual / 365) * Capital
+        interes_anual = 0.20
+        capital = loan["amount"]
+        interes_diario = (interes_anual / 365) * capital
+
+        pagado_anterior = loan["paid_amount"]
+
+        # Saldo con interés diario simple acumulado
+        saldo = capital + (interes_diario * dias_transcurridos)
+        saldo -= pagado_anterior
+        saldo -= payment
+
+        saldo = max(saldo, 0)
+        nuevo_pagado = pagado_anterior + payment
+
+        if saldo <= 0:
+            new_status = "Pagado"
+        else:
+            new_status = "Parcialmente Pagado"
+
+        if db_update_loan_status(loan["loan_id"], new_status, nuevo_pagado):
+            await update.message.reply_text(
+                f"💰 Pago registrado para préstamo {loan['loan_id']}.\n"
+                f"Pagado total: {nuevo_pagado:.2f}\n"
+                f"Saldo actualizado (con interés diario): {saldo:.2f}\n"
+                f"Estado: {new_status}"
+            )
+        else:
+            await update.message.reply_text(f"❌ Error al actualizar el pago para {loan['loan_id']}.")
+    except Exception as e:
+        await update.message.reply_text(f"Error procesando el pago: {e}")
+    return ConversationHandler.END
 
 async def new_loan_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip().lower()
@@ -384,8 +519,21 @@ def main():
         fallbacks=[CommandHandler("cancel", new_loan_cancel)],
     )
 
+    pay_conv_handler = ConversationHandler(
+        entry_points=[CommandHandler("pay", pay_select_client), MessageHandler(filters.Regex("^💳 Pagar Cuota$"), pay_select_client)],
+        states={
+            PAY_SELECT_CLIENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, pay_receive_client)],
+            PAY_SELECT_LOAN: [MessageHandler(filters.TEXT & ~filters.COMMAND, pay_receive_loan)],
+            PAY_ENTER_AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, pay_process_amount)],
+        },
+        fallbacks=[CommandHandler("cancel", new_loan_cancel)],
+        map_to_parent={
+            ConversationHandler.END: ConversationHandler.END,
+        }
+    )
+
     application.add_handler(conv_handler)
-    application.add_handler(CommandHandler("pay", pay_loan_command))
+    application.add_handler(pay_conv_handler)
     application.add_handler(CommandHandler("listarprestamos", list_loans_command))
     application.add_handler(CommandHandler("backup", backup_command))
     application.add_handler(CommandHandler("saldos", saldos_command))
