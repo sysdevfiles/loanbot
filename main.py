@@ -229,22 +229,7 @@ async def pay_loan_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except (IndexError, ValueError) as e:
         await update.message.reply_text(f"Error en el comando. Uso: /pay <ID_Préstamo> <MontoPagado>. Detalle: {e}")
 
-# Resumen de la lógica de "Pagar Cuota"
 
-# - El usuario ejecuta `/pay <ID_Préstamo> <MontoPagado>`.
-# - El bot busca el préstamo por su ID.
-# - Calcula los días transcurridos desde la fecha de registro (`dd-mm-yyyy`).
-# - Calcula el interés diario simple: `(0.20 / 365) * capital`.
-# - El saldo se actualiza sumando el interés diario acumulado por los días transcurridos al capital, y restando lo pagado anteriormente y el nuevo pago.
-# - El saldo nunca es negativo.
-# - Si el saldo es 0 o menor, el estado del préstamo pasa a "Pagado", si no, queda como "Parcialmente Pagado".
-# - El bot actualiza el monto pagado y el estado en la base de datos y responde con el nuevo saldo y estado.
-
-# Ejemplo de mensaje de respuesta:
-# 💰 Pago registrado para préstamo L1234.
-# Pagado total: 500.00
-# Saldo actualizado (con interés diario): 1200.00
-# Estado: Parcialmente Pagado
 
 async def list_loans_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     loans = db_get_all_loans()
@@ -315,7 +300,7 @@ ASK_INTEREST = 2  # No se pregunta, pero se usa para el flujo
 ASK_CONFIRM = 3
 
 # Estados para pagar cuota
-PAY_SELECT_CLIENT, PAY_SELECT_LOAN, PAY_ENTER_AMOUNT = range(10, 13)
+PAY_SELECT_CLIENT, PAY_SELECT_LOAN, PAY_ENTER_AMOUNT, PAY_ENTER_DATE = range(10, 14)
 
 async def new_loan_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
@@ -361,7 +346,7 @@ async def new_loan_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Capital inválido. Ingresa solo números positivos:")
         return ASK_AMOUNT
 
-# --- Nuevo flujo para pagar cuota con selección de cliente ---
+
 
 async def pay_select_client(update: Update, context: ContextTypes.DEFAULT_TYPE):
     loans = db_get_all_loans()
@@ -413,10 +398,34 @@ async def pay_receive_loan(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Ingrese el monto a pagar para el préstamo {loan_id} (capital actual: {loan['current_capital'] if loan['current_capital'] is not None else loan['amount']}):",
         reply_markup=ReplyKeyboardRemove()
     )
-    return PAY_ENTER_AMOUNT
+    # Preguntar si quiere ingresar una fecha de pago manual
+    await update.message.reply_text(
+        "¿Deseas ingresar una fecha de pago manual? (si/no)\n"
+        "Si respondes 'no', se usará la fecha de hoy."
+    )
+    return PAY_ENTER_DATE
+
+async def pay_receive_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    respuesta = update.message.text.strip().lower()
+    if respuesta in ["si", "sí", "s", "yes", "y"]:
+        await update.message.reply_text("Ingresa la fecha del pago en formato dd-mm-yyyy:")
+        return PAY_ENTER_AMOUNT
+    else:
+        context.user_data["fecha_pago_manual"] = datetime.now().strftime("%d-%m-%Y")
+        await update.message.reply_text("Ingresa el monto a pagar:")
+        return PAY_ENTER_AMOUNT
 
 async def pay_process_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
+        # Si el texto es una fecha, la guardamos y pedimos el monto
+        try:
+            fecha_pago = datetime.strptime(update.message.text.strip(), "%d-%m-%Y")
+            context.user_data["fecha_pago_manual"] = fecha_pago.strftime("%d-%m-%Y")
+            await update.message.reply_text("Ingresa el monto a pagar:")
+            return PAY_ENTER_AMOUNT
+        except ValueError:
+            pass  # No es fecha, entonces es monto
+
         payment = float(update.message.text.replace(",", "."))
         if payment <= 0:
             raise ValueError()
@@ -425,38 +434,70 @@ async def pay_process_amount(update: Update, context: ContextTypes.DEFAULT_TYPE)
             await update.message.reply_text("Error interno. Intenta de nuevo.")
             return ConversationHandler.END
 
-        # Convertir fecha de registro al formato dd-mm-yyyy
+        fecha_pago_str = context.user_data.get("fecha_pago_manual", datetime.now().strftime("%d-%m-%Y"))
+        fecha_pago = datetime.strptime(fecha_pago_str, "%d-%m-%Y")
         fecha_registro = datetime.strptime(loan["creation_date"], "%d-%m-%Y")
-        fecha_hoy = datetime.now()
-        dias_transcurridos = (fecha_hoy - fecha_registro).days
+        dias_transcurridos = (fecha_pago - fecha_registro).days
         if dias_transcurridos < 0:
             dias_transcurridos = 0
 
-        # Fórmula de interés diario: (Tasa de Interés Anual / 365) * Capital
-        interes_anual = 0.20
-        capital = loan["amount"]
-        interes_diario = (interes_anual / 365) * capital
+        interes_mensual = 0.20
+        capital_inicial = loan["amount"]
+        # Interés diario calculado sobre el capital inicial (simple interest)
+        interes_diario_sobre_capital_inicial = (interes_mensual / 30) * capital_inicial
 
         pagado_anterior = loan["paid_amount"]
+        current_capital_before_payment = loan["current_capital"] if loan["current_capital"] is not None else capital_inicial
 
-        # Saldo con interés diario simple acumulado
-        saldo = capital + (interes_diario * dias_transcurridos)
-        saldo -= pagado_anterior
-        saldo -= payment
+        # Calcular el total de interés devengado desde el inicio del préstamo hasta la fecha de pago
+        total_interes_devengado_hasta_fecha_pago = round(interes_diario_sobre_capital_inicial * dias_transcurridos, 2)
 
-        saldo = max(saldo, 0)
-        nuevo_pagado = pagado_anterior + payment
+        # Calcular la porción de interés que estaba pendiente antes de este pago,
+        # considerando los pagos anteriores.
+        # Deuda total teórica (capital + interés total devengado)
+        deuda_total_teorica = capital_inicial + total_interes_devengado_hasta_fecha_pago
+        # Lo que quedaba por pagar antes de este pago actual
+        pendiente_antes_de_pago_actual = deuda_total_teorica - pagado_anterior
+        
+        # Interés pendiente de cubrir antes de este pago actual
+        # Esto es la diferencia entre lo pendiente total y el capital actual pendiente (principal)
+        interes_pendiente_a_cubrir = round(max(0, pendiente_antes_de_pago_actual - current_capital_before_payment), 2)
 
-        if saldo <= 0:
+        # Aplicar el pago:
+        pago_a_interes = min(payment, interes_pendiente_a_cubrir)
+        pago_a_capital = round(payment - pago_a_interes, 2)
+
+        if pago_a_capital < 0: # Sanity check, should not happen if interes_pendiente_a_cubrir is calculated correctly
+            pago_a_capital = 0
+            
+        nuevo_capital = round(current_capital_before_payment - pago_a_capital, 2)
+        nuevo_capital = max(0, nuevo_capital) # El capital no puede ser negativo
+
+        # Saldo con interés diario simple acumulado (20% mensual) - esta es la deuda total restante
+        saldo = round((capital_inicial + total_interes_devengado_hasta_fecha_pago) - pagado_anterior - payment, 2)
+        saldo = max(0, saldo) # El saldo no puede ser negativo
+        
+        nuevo_pagado = round(pagado_anterior + payment, 2)
+
+        if saldo <= 0.01 or nuevo_capital <= 0.01 : # Usar un pequeño umbral para comparaciones de flotantes
             new_status = "Pagado"
+            # Asegurar que si está pagado, el saldo y capital actual sean 0 para evitar confusiones
+            saldo = 0
+            nuevo_capital = 0
         else:
             new_status = "Parcialmente Pagado"
 
-        if db_update_loan_status(loan["loan_id"], new_status, nuevo_pagado):
+        if db_update_loan_status_and_capital(loan["loan_id"], new_status, nuevo_pagado, nuevo_capital):
             await update.message.reply_text(
                 f"💰 Pago registrado para préstamo {loan['loan_id']}.\n"
-                f"Pagado total: {nuevo_pagado:.2f}\n"
-                f"Saldo actualizado (con interés diario): {saldo:.2f}\n"
+                f"Fecha de pago: {fecha_pago_str}\n"
+                f"Monto pagado: {payment:.2f}\n"
+                f"  - Aplicado a interés: {pago_a_interes:.2f}\n"
+                f"  - Aplicado a capital: {pago_a_capital:.2f}\n"
+                f"Pagado total acumulado: {nuevo_pagado:.2f}\n"
+                f"Capital inicial: {capital_inicial:.2f}\n"
+                f"Capital actual restante: {nuevo_capital:.2f}\n"
+                f"Saldo total pendiente (incluye intereses futuros si aplica): {saldo:.2f}\n"
                 f"Estado: {new_status}"
             )
         else:
@@ -524,6 +565,7 @@ def main():
         states={
             PAY_SELECT_CLIENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, pay_receive_client)],
             PAY_SELECT_LOAN: [MessageHandler(filters.TEXT & ~filters.COMMAND, pay_receive_loan)],
+            PAY_ENTER_DATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, pay_receive_date)],
             PAY_ENTER_AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, pay_process_amount)],
         },
         fallbacks=[CommandHandler("cancel", new_loan_cancel)],
