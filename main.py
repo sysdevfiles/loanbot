@@ -77,28 +77,32 @@ MAIN_MENU = [
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print("Recibido /start")
-    help_msg = (
-        "🤖 <b>Bienvenido al Bot de Préstamos</b>\n\n"
-        "Selecciona una opción del menú o usa los comandos:\n"
-        "📝 /nuevoprestamo - Registrar un nuevo préstamo\n"
-        "💳 /pay - Registrar un pago\n"
-        "📋 /listarprestamos - Ver todos los préstamos\n"
-        "💾 /backup - Descargar respaldo en CSV\n\n"
-        "<b>Comandos útiles para el servicio:</b>\n"
-        "<code>systemctl start loanbot.service</code> - Iniciar el bot\n"
-        "<code>systemctl stop loanbot.service</code> - Detener el bot\n"
-        "<code>systemctl restart loanbot.service</code> - Reiniciar el bot\n"
-        "<code>systemctl status loanbot.service</code> - Ver estado del bot\n"
-        "<code>systemctl enable loanbot.service</code> - Habilitar inicio automático\n"
-        "<code>systemctl disable loanbot.service</code> - Deshabilitar inicio automático\n"
-        "<code>systemctl daemon-reload</code> - Recargar configuración de systemd\n"
-        "<code>journalctl -u loanbot.service -f</code> - Ver logs en tiempo real\n"
-    )
-    await update.message.reply_text(
-        help_msg,
-        reply_markup=ReplyKeyboardMarkup(MAIN_MENU, resize_keyboard=True),
-        parse_mode="HTML"
-    )
+    try:
+        help_msg = (
+            "🤖 <b>Bienvenido al Bot de Préstamos</b>\n\n"
+            "Selecciona una opción del menú o usa los comandos:\n"
+            "📝 /nuevoprestamo - Registrar un nuevo préstamo\n"
+            "💳 /pay - Registrar un pago\n"
+            "📋 /listarprestamos - Ver todos los préstamos\n"
+            "💾 /backup - Descargar respaldo en CSV\n\n"
+            "<b>Comandos útiles para el servicio:</b>\n"
+            "<code>systemctl start loanbot.service</code> - Iniciar el bot\n"
+            "<code>systemctl stop loanbot.service</code> - Detener el bot\n"
+            "<code>systemctl restart loanbot.service</code> - Reiniciar el bot\n"
+            "<code>systemctl status loanbot.service</code> - Ver estado del bot\n"
+            "<code>systemctl enable loanbot.service</code> - Habilitar inicio automático\n"
+            "<code>systemctl disable loanbot.service</code> - Deshabilitar inicio automático\n"
+            "<code>systemctl daemon-reload</code> - Recargar configuración de systemd\n"
+            "<code>journalctl -u loanbot.service -f</code> - Ver logs en tiempo real\n"
+        )
+        await update.message.reply_text(
+            help_msg,
+            reply_markup=ReplyKeyboardMarkup(MAIN_MENU, resize_keyboard=True),
+            parse_mode="HTML"
+        )
+    except Exception as e:
+        print(f"Error enviando menú de /start: {e}")
+        await update.message.reply_text("Ocurrió un error mostrando el menú principal.")
 
 async def handle_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
@@ -217,6 +221,9 @@ def main():
     init_db()
     logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
     application = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
+
+    # Asegúrate de registrar el handler de /start ANTES que el ConversationHandler
+    application.add_handler(CommandHandler("start", start))
 
     # Conversación para registro de préstamo
     conv_handler = ConversationHandler(
