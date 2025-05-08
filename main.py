@@ -146,31 +146,67 @@ async def pay_loan_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         loan_id_to_update = args[0]
         payment = float(args[1])
-        # Buscar el préstamo
         loans = db_get_all_loans()
         loan = next((l for l in loans if l["loan_id"] == loan_id_to_update), None)
         if not loan:
             await update.message.reply_text(f"❌ Préstamo {loan_id_to_update} no encontrado.")
             return
-        # Sumar el pago al pagado actual
-        new_paid_amount = loan["paid_amount"] + payment
-        # Calcular nuevo estado
+
+        # Convertir fecha de registro al formato dd-mm-yyyy
+        fecha_registro = datetime.strptime(loan["creation_date"], "%d-%m-%Y")
+        fecha_hoy = datetime.now()
+        dias_transcurridos = (fecha_hoy - fecha_registro).days
+        if dias_transcurridos < 0:
+            dias_transcurridos = 0
+
+        # Fórmula de interés diario: (Tasa de Interés Anual / 365) * Capital
+        interes_anual = 0.20
         capital = loan["amount"]
-        if new_paid_amount >= capital:
+        interes_diario = (interes_anual / 365) * capital
+
+        pagado_anterior = loan["paid_amount"]
+
+        # Saldo con interés diario simple acumulado
+        saldo = capital + (interes_diario * dias_transcurridos)
+        saldo -= pagado_anterior
+        saldo -= payment
+
+        saldo = max(saldo, 0)
+        nuevo_pagado = pagado_anterior + payment
+
+        if saldo <= 0:
             new_status = "Pagado"
-            new_paid_amount = capital  # No permitir pagado mayor al capital
         else:
             new_status = "Parcialmente Pagado"
-        if db_update_loan_status(loan_id_to_update, new_status, new_paid_amount):
+
+        if db_update_loan_status(loan_id_to_update, new_status, nuevo_pagado):
             await update.message.reply_text(
                 f"💰 Pago registrado para préstamo {loan_id_to_update}.\n"
-                f"Pagado total: {new_paid_amount}\n"
+                f"Pagado total: {nuevo_pagado:.2f}\n"
+                f"Saldo actualizado (con interés diario): {saldo:.2f}\n"
                 f"Estado: {new_status}"
             )
         else:
             await update.message.reply_text(f"❌ Error al actualizar el pago para {loan_id_to_update}.")
     except (IndexError, ValueError) as e:
         await update.message.reply_text(f"Error en el comando. Uso: /pay <ID_Préstamo> <MontoPagado>. Detalle: {e}")
+
+# Resumen de la lógica de "Pagar Cuota"
+
+# - El usuario ejecuta `/pay <ID_Préstamo> <MontoPagado>`.
+# - El bot busca el préstamo por su ID.
+# - Calcula los días transcurridos desde la fecha de registro (`dd-mm-yyyy`).
+# - Calcula el interés diario simple: `(0.20 / 365) * capital`.
+# - El saldo se actualiza sumando el interés diario acumulado por los días transcurridos al capital, y restando lo pagado anteriormente y el nuevo pago.
+# - El saldo nunca es negativo.
+# - Si el saldo es 0 o menor, el estado del préstamo pasa a "Pagado", si no, queda como "Parcialmente Pagado".
+# - El bot actualiza el monto pagado y el estado en la base de datos y responde con el nuevo saldo y estado.
+
+# Ejemplo de mensaje de respuesta:
+# 💰 Pago registrado para préstamo L1234.
+# Pagado total: 500.00
+# Saldo actualizado (con interés diario): 1200.00
+# Estado: Parcialmente Pagado
 
 async def list_loans_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     loans = db_get_all_loans()
@@ -273,11 +309,11 @@ async def new_loan_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Interés fijo del 20%
         interest = round(amount * 0.20, 2)
         context.user_data["interest"] = interest
-        # Fecha de registro automática
-        creation_date = datetime.now().strftime("%Y-%m-%d")
+        # Fecha de registro automática en formato dd-mm-yyyy
+        creation_date = datetime.now().strftime("%d-%m-%Y")
         context.user_data["creation_date"] = creation_date
-        # Fecha de pago a 30 días
-        payment_due_date = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
+        # Fecha de pago a 30 días en formato dd-mm-yyyy
+        payment_due_date = (datetime.now() + timedelta(days=30)).strftime("%d-%m-%Y")
         context.user_data["payment_due_date"] = payment_due_date
         # Confirmación
         await update.message.reply_text(
