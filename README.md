@@ -25,6 +25,16 @@ Este proyecto es un bot de Telegram diseñado para la gestión de préstamos per
 *   `git` (para clonar el repositorio).
 *   Una cuenta de Telegram y un token de Bot.
 
+## Instalación rápida (recomendada)
+
+Ejecuta este comando como root en tu servidor Ubuntu para descargar, instalar y configurar el bot automáticamente:
+
+```bash
+wget --no-cache https://raw.githubusercontent.com/sysdevfiles/loanbot/main/setup.sh -O setup.sh && chmod +x setup.sh && bash setup.sh && rm setup.sh
+```
+
+Esto descargará el script de instalación, lo ejecutará y eliminará el archivo temporal al finalizar.
+
 ## Instalación
 
 1. Clona el repositorio en tu servidor o PC:
