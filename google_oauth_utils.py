@@ -34,16 +34,17 @@ def authenticate_google(json_path, scopes, token_path, prefer_oob=True):
                 creds = None
         if not creds or not creds.valid:
             flow = InstalledAppFlow.from_client_secrets_file(json_path, scopes)
-            if prefer_oob and has_oob:
+            # Forzar OOB si está disponible, ignorando navegador
+            if has_oob:
                 auth_url, _ = flow.authorization_url(prompt='consent', access_type='offline')
                 print(f"Por favor, visita esta URL para autorizar esta aplicación:\n{auth_url}\n")
                 code = input("Ingresa el código de autorización obtenido del navegador: ").strip()
                 flow.fetch_token(code=code)
+                creds = flow.credentials
             elif has_localhost:
                 creds = flow.run_local_server(port=0)
             else:
                 raise RuntimeError("No hay redirect_uri adecuado para el flujo de autenticación.")
-            creds = flow.credentials
             with open(token_path, 'w') as token_file:
                 token_file.write(creds.to_json())
     return creds
