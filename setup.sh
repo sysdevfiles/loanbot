@@ -155,11 +155,10 @@ echo -e "\n${CYAN}[Paso D/7] Creando entorno virtual 'venv' en $(pwd)/venv...${N
 python3 -m venv venv
 echo -e "${GREEN}Entorno virtual 'venv' creado.${NC}"
 
-# Activar el entorno virtual
-# Nota: La activación del venv aquí es para este script. El servicio systemd usará la ruta absoluta al python del venv.
+# Activar el entorno virtual automáticamente después de crearlo
 echo -e "\n${CYAN}Activando entorno virtual para la sesión actual del script...${NC}"
 source venv/bin/activate
-echo -e "${GREEN}Entorno virtual activado para esta sesión.${NC}"
+echo -e "${GREEN}Entorno virtual 'venv' activado automáticamente.${NC}"
 
 # Paso 4: Actualizar pip (ahora Paso E)
 echo -e "\n${CYAN}[Paso E/7] Actualizando pip...${NC}"
