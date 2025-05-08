@@ -76,26 +76,39 @@ MAIN_MENU = [
 ]
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "🤖 *Bienvenido al Bot de Préstamos*\n\n"
+    print("Recibido /start")
+    help_msg = (
+        "🤖 <b>Bienvenido al Bot de Préstamos</b>\n\n"
         "Selecciona una opción del menú o usa los comandos:\n"
         "📝 /nuevoprestamo - Registrar un nuevo préstamo\n"
         "💳 /pay - Registrar un pago\n"
         "📋 /listarprestamos - Ver todos los préstamos\n"
-        "💾 /backup - Descargar respaldo en CSV",
+        "💾 /backup - Descargar respaldo en CSV\n\n"
+        "<b>Comandos útiles para el servicio:</b>\n"
+        "<code>systemctl start loanbot.service</code> - Iniciar el bot\n"
+        "<code>systemctl stop loanbot.service</code> - Detener el bot\n"
+        "<code>systemctl restart loanbot.service</code> - Reiniciar el bot\n"
+        "<code>systemctl status loanbot.service</code> - Ver estado del bot\n"
+        "<code>systemctl enable loanbot.service</code> - Habilitar inicio automático\n"
+        "<code>systemctl disable loanbot.service</code> - Deshabilitar inicio automático\n"
+        "<code>systemctl daemon-reload</code> - Recargar configuración de systemd\n"
+        "<code>journalctl -u loanbot.service -f</code> - Ver logs en tiempo real\n"
+    )
+    await update.message.reply_text(
+        help_msg,
         reply_markup=ReplyKeyboardMarkup(MAIN_MENU, resize_keyboard=True),
-        parse_mode="Markdown"
+        parse_mode="HTML"
     )
 
 async def handle_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
-    if text == "📝 Nuevo Préstamo":
+    if (text == "📝 Nuevo Préstamo"):
         await new_loan_command(update, context)
-    elif text == "💳 Pagar Cuota":
+    elif (text == "💳 Pagar Cuota"):
         await update.message.reply_text("Usa el comando: /pay <ID_Préstamo> <MontoPagado> 💳")
-    elif text == "📋 Listar Préstamos":
+    elif (text == "📋 Listar Préstamos"):
         await list_loans_command(update, context)
-    elif text == "💾 Backup CSV":
+    elif (text == "💾 Backup CSV"):
         await backup_command(update, context)
     else:
         await update.message.reply_text("Por favor, selecciona una opción del menú.")
@@ -136,13 +149,13 @@ async def list_loans_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if not loans:
         await update.message.reply_text("📋 No hay préstamos registrados.")
         return
-    msg = "📋 *Préstamos registrados:*\n\n"
+    msg = "📋 <b>Préstamos registrados:</b>\n\n"
     for loan in loans:
         msg += (
             f"🆔 {loan['loan_id']} | 👤 {loan['user_name']} | 💵 {loan['amount']} | "
             f"📅 {loan['creation_date']} | 🏷️ {loan['status']} | 💸 {loan['paid_amount']}\n"
         )
-    await update.message.reply_text(msg[:4096], parse_mode="Markdown")
+    await update.message.reply_text(msg[:4096], parse_mode="HTML")
 
 async def backup_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     loans = db_get_all_loans()
