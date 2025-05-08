@@ -240,8 +240,14 @@ systemctl daemon-reload
 systemctl enable loanbot.service
 
 echo -e "${GREEN}Servicio loanbot habilitado para iniciar con el sistema.${NC}"
-echo -e "${YELLOW}Puedes iniciar el bot con: systemctl start loanbot.service${NC}"
-echo -e "${YELLOW}Verifica el estado con: systemctl status loanbot.service${NC}"
+echo -e "${YELLOW}Puedes iniciar el bot en segundo plano como servicio con: ${GREEN}systemctl start loanbot.service${NC}"
+echo -e "${YELLOW}Verifica el estado con: ${GREEN}systemctl status loanbot.service${NC}"
+echo -e "${YELLOW}Para ver logs en tiempo real: ${GREEN}journalctl -u loanbot.service -f${NC}"
+echo -e "${YELLOW}Para detener el bot: ${GREEN}systemctl stop loanbot.service${NC}"
+echo -e "${YELLOW}Para reiniciar el bot: ${GREEN}systemctl restart loanbot.service${NC}"
+echo -e "${YELLOW}Para habilitar inicio automático: ${GREEN}systemctl enable loanbot.service${NC}"
+echo -e "${YELLOW}Para deshabilitar inicio automático: ${GREEN}systemctl disable loanbot.service${NC}"
+echo -e "${YELLOW}Si modificas el archivo de servicio, recarga systemd con: ${GREEN}systemctl daemon-reload${NC}"
 
 echo -e "\n${GREEN}=== ¡Configuración Básica Completada en '$PROJECT_PATH'! ===${NC}"
 echo -e "${GREEN}Entorno virtual 'venv' creado, dependencias instaladas, base de datos limpia, archivo '.env' configurado y servicio systemd listo.${NC}"
