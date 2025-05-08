@@ -1,12 +1,7 @@
 import gspread
 import os
-import sys
 from dotenv import load_dotenv
-# from oauth2client.client import OOB_CALLBACK_URN # Eliminado, ya no se usa
-
-from google_auth_oauthlib.flow import InstalledAppFlow
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
+from google_oauth_utils import authenticate_google
 
 load_dotenv()
 
@@ -18,62 +13,13 @@ os.makedirs(os.path.dirname(TOKEN_JSON_PATH), exist_ok=True)
 
 def init_gspread_client(oauth_creds_file_path, sheet_name, worksheet_name):
     """Initializes and returns the gspread client and worksheet using OAuth2.0."""
-    creds = None
-    if os.path.exists(TOKEN_JSON_PATH):
-        try:
-            creds = Credentials.from_authorized_user_file(TOKEN_JSON_PATH, SCOPE)
-            print(f"Credenciales cargadas desde {TOKEN_JSON_PATH}")
-        except Exception as e:
-            print(f"Error al cargar credenciales desde {TOKEN_JSON_PATH}: {e}. Se intentará re-autenticar.")
-            creds = None
-
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            try:
-                print("Refrescando token de acceso expirado...")
-                creds.refresh(Request())
-                print("Token refrescado exitosamente.")
-                with open(TOKEN_JSON_PATH, 'w') as token_file:
-                    token_file.write(creds.to_json())
-                print(f"Credenciales refrescadas guardadas en {TOKEN_JSON_PATH}")
-            except Exception as e:
-                print(f"Error al refrescar el token: {e}")
-                print("Se requerirá una nueva autorización.")
-                creds = None
-        else:
-            print("No se encontraron credenciales válidas. Iniciando flujo de autorización.")
-            if not os.path.exists(oauth_creds_file_path):
-                print(f"Error: Archivo de credenciales de cliente OAuth no encontrado en: {oauth_creds_file_path}")
-                print("Asegúrate de que GOOGLE_OAUTH_CLIENT_SECRET_FILE en tu .env sea correcta y el archivo exista.")
-                return None
-            try:
-                flow = InstalledAppFlow.from_client_secrets_file(
-                    oauth_creds_file_path, SCOPE)
-                auth_url, _ = flow.authorization_url(prompt='consent', access_type='offline')
-                print(f"Por favor, visita esta URL para autorizar esta aplicación:\n{auth_url}\n")
-                auth_code = input("Ingresa el código de autorización obtenido del navegador: ").strip()
-                print("Intercambiando código de autorización por tokens...")
-                flow.fetch_token(code=auth_code)
-                creds = flow.credentials
-                print("Tokens obtenidos y credenciales creadas exitosamente.")
-                with open(TOKEN_JSON_PATH, 'w') as token_file:
-                    token_file.write(creds.to_json())
-                print(f"Credenciales guardadas en {TOKEN_JSON_PATH}")
-            except Exception as e:
-                print(f"Error durante el flujo de autorización: {e}")
-                print("Detalles del error:", str(e))
-                if "invalid_grant" in str(e).lower():
-                    print("Esto puede indicar un problema con el código de autorización (quizás expiró o fue incorrecto),")
-                    print("o un problema con la configuración del cliente OAuth en Google Cloud (ej. redirect_uris).")
-                    print(f"Asegúrate de que '{oauth_creds_file_path}' tenga 'urn:ietf:wg:oauth:2.0:oob' en sus redirect_uris,")
-                    print("y que tu cliente OAuth en Google Cloud Console sea de tipo 'Aplicación de escritorio'.")
-                return None
-
-    if not creds:
-        print("Error: No se pudieron obtener las credenciales de Google.")
-        return None
-
     try:
+        creds = authenticate_google(
+            oauth_creds_file_path,
+            SCOPE,
+            TOKEN_JSON_PATH,
+            prefer_oob=True  # Cambia a False si prefieres el flujo local
+        )
         print("Inicializando cliente gspread con las credenciales obtenidas...")
         gc = gspread.Client(auth=creds)
         spreadsheet = gc.open(sheet_name)
@@ -81,20 +27,8 @@ def init_gspread_client(oauth_creds_file_path, sheet_name, worksheet_name):
         ensure_header(worksheet)
         print("Cliente de Google Sheets (OAuth) inicializado correctamente.")
         return worksheet
-    except FileNotFoundError:
-        print(f"Error: Archivo de credenciales OAuth no encontrado en la ruta: {oauth_creds_file_path}")
-        return None
-    except gspread.exceptions.SpreadsheetNotFound:
-        print(f"Error: Hoja de cálculo '{sheet_name}' no encontrada. Asegúrate de que el nombre sea correcto y que la cuenta tenga permisos.")
-        return None
-    except gspread.exceptions.WorksheetNotFound:
-        print(f"Error: Hoja de trabajo '{worksheet_name}' no encontrada en la hoja de cálculo '{sheet_name}'.")
-        return None
     except Exception as e:
-        print(f"Error al inicializar o usar el cliente gspread: {e}")
-        print("Detalles del error:", str(e))
-        if "accessNotConfigured" in str(e) or "not whitelisted" in str(e) or "enable the api" in str(e).lower():
-             print("Asegúrate de que la API de Google Sheets (y Drive API) esté habilitada en Google Cloud Console para tu proyecto.")
+        print(f"Error al autenticar o inicializar Google Sheets: {e}")
         return None
 
 def ensure_header(worksheet):

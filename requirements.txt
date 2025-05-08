@@ -1,6 +1,10 @@
 python-telegram-bot
 gspread
-oauth2client
+# oauth2client # Reemplazado por google-auth-oauthlib para el flujo de autenticación
+google-auth
+google-auth-oauthlib
+google-auth-httplib2
+googleapiclient
 python-dotenv
 requests
 schedule

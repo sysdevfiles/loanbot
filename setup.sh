@@ -149,6 +149,7 @@ echo -e "${GREEN}pip actualizado correctamente.${NC}"
 echo -e "\n${CYAN}[Paso F/7] Instalando dependencias desde requirements.txt...${NC}"
 if [ -f requirements.txt ]; then
     pip3 install -r requirements.txt # Asegurando el uso explícito de pip3
+    pip3 install python-telegram-bot google-auth google-auth-oauthlib google-auth-httplib2 googleapiclient
     # El script continuará incluso si hay un error aquí (como con sqlite3)
     # Es importante que el requirements.txt en el repo esté correcto.
     echo -e "${GREEN}Intento de instalación de dependencias completado.${NC}"
@@ -248,6 +249,16 @@ if [ $? -eq 0 ]; then
     fi
 else
     echo -e "${RED}Error al crear el archivo JSON base en '$google_oauth_secret_file_full_path'.${NC}"
+fi
+
+# Validar que el archivo JSON tenga ambos redirect_uris
+if grep -q "urn:ietf:wg:oauth:2.0:oob" "/root/ControlPréstamos/config/client_secret_oauth.json" && grep -q "http://localhost" "/root/ControlPréstamos/config/client_secret_oauth.json"; then
+    echo -e "${GREEN}El archivo de credenciales contiene ambos redirect_uris necesarios.${NC}"
+else
+    echo -e "${RED}ADVERTENCIA: El archivo de credenciales JSON NO contiene ambos redirect_uris ('http://localhost' y 'urn:ietf:wg:oauth:2.0:oob').${NC}"
+    echo -e "${YELLOW}Esto puede causar errores de autenticación en servidores/headless.${NC}"
+    echo -e "${YELLOW}Edita el archivo y asegúrate de que la sección 'redirect_uris' tenga ambos valores antes de continuar.${NC}"
+    read -p "Presiona Enter para continuar después de corregir el archivo..."
 fi
 
 echo -e "${CYAN}Creando/Actualizando archivo '$env_file_path'...${NC}"
